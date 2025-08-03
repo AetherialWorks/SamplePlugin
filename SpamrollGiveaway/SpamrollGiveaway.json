@@ -1,0 +1,12 @@
+{
+  "Author": "your name here",
+  "Name": "SpamrollGiveaway",
+  "Punchline": "Automated giveaway system for FFXIV.",
+  "Description": "SpamrollGiveaway plugin for managing automated giveaways in FFXIV.",
+  "ApplicableVersion": "any",
+  "Tags": [
+    "giveaway",
+    "automation",
+    "ffxiv"
+  ]
+}

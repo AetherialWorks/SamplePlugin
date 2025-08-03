@@ -14,4 +14,8 @@
       <Visible>false</Visible>
     </Content>
   </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\extern\FFXIVToolkit\FFXIVSharedLibrary\FFXIVSharedLibrary\FFXIVSharedLibrary.csproj" />
+  </ItemGroup>
 </Project>
