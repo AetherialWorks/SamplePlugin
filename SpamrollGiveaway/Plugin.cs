@@ -6,16 +6,31 @@ using Dalamud.Interface.Windowing;
 using Dalamud.Plugin.Services;
 using SpamrollGiveaway.Windows;
 using FFXIVSharedLibrary.Chat;
+using FFXIVSharedLibrary.Player;
 using System.Collections.Generic;
 using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 using System;
+using System.Text.RegularExpressions;
+using System.Runtime.InteropServices;
 
 namespace SpamrollGiveaway;
 
+public class Winner
+{
+    public string PlayerName { get; set; } = "";
+    public int RollValue { get; set; }
+    public DateTime WinTime { get; set; }
+    public int RollOrder { get; set; }
+    public bool IsDebugRoll { get; set; }
+}
+
 public sealed class Plugin : IDalamudPlugin
 {
+    // Windows API for playing system sounds
+    [DllImport("user32.dll")]
+    private static extern bool MessageBeep(uint uType);
     [PluginService] internal static IDalamudPluginInterface PluginInterface { get; private set; } = null!;
     [PluginService] internal static ITextureProvider TextureProvider { get; private set; } = null!;
     [PluginService] internal static ICommandManager CommandManager { get; private set; } = null!;
@@ -37,30 +52,17 @@ public sealed class Plugin : IDalamudPlugin
 
     // Game state
     private bool isGameActive = false;
-    private readonly Dictionary<string, RollEventArgs> currentRolls = new();
-    private readonly List<RollEventArgs> winners = new();
+    private readonly List<Winner> gameWinners = new();
+    private readonly Dictionary<string, int> rollOrder = new(); // For tiebreaking
+    private int rollCounter = 0;
     private CancellationTokenSource? gameCancellation;
     private readonly object lockObject = new object();
 
-    // FFXIVSharedLibrary components
-    private ChatMessageProcessor chatProcessor;
-    private RollHandler rollHandler;
-    private RollCollector rollCollector;
 
     public Plugin()
     {
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Configuration.Initialize(PluginInterface);
-
-        // Initialize FFXIVSharedLibrary components
-        chatProcessor = new ChatMessageProcessor();
-        rollHandler = new RollHandler(Configuration.LocalPlayerName, Configuration.DebugMode);
-        rollCollector = new RollCollector();
-
-        rollHandler.RollDetected += OnRollDetected;
-        rollCollector.NewRollAdded += OnNewRollAdded;
-
-        chatProcessor.RegisterHandler(rollHandler);
 
         ConfigWindow = new ConfigWindow(this);
         MainWindow = new MainWindow(this);
@@ -115,9 +117,6 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= DrawUI;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUI;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
-
-        rollHandler.RollDetected -= OnRollDetected;
-        rollCollector.NewRollAdded -= OnNewRollAdded;
     }
 
     private void OnCommand(string command, string args)
@@ -136,34 +135,174 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (!isGameActive) return;
 
-        chatProcessor.ProcessMessage((int)type, timestamp, sender.TextValue, message.TextValue);
+        var messageText = message.TextValue;
+        
+        // Debug logging for roll detection
+        if (messageText.Contains("Random!"))
+        {
+            Log.Information($"[Debug] Detected Random message: '{messageText}'");
+        }
+        
+        // Detect roll patterns (normal and debug)
+        Match rollMatch;
+        string playerName;
+        int rollValue;
+        bool isDebugRoll = false;
+
+        if (Configuration.DebugMode)
+        {
+            // Try debug pattern first
+            rollMatch = Regex.Match(messageText, @"Random! (.+) rolls? a (\d+) \(out of \d+\)\.");
+            if (rollMatch.Success)
+            {
+                isDebugRoll = true;
+            }
+            else
+            {
+                // Fall back to normal pattern
+                rollMatch = Regex.Match(messageText, @"Random! (.+) rolls? a (\d+)\.");
+            }
+        }
+        else
+        {
+            // Normal pattern only
+            rollMatch = Regex.Match(messageText, @"Random! (.+) rolls? a (\d+)\.");
+        }
+
+        if (!rollMatch.Success) 
+        {
+            if (messageText.Contains("Random!"))
+            {
+                Log.Warning($"[Debug] Random message failed regex match: '{messageText}'");
+            }
+            return;
+        }
+
+        playerName = rollMatch.Groups[1].Value;
+        rollValue = int.Parse(rollMatch.Groups[2].Value);
+        
+        Log.Information($"[Debug] Roll detected - Player: '{playerName}', Value: {rollValue}");
+
+        // Extract and format player name with server
+        var normalizedName = ExtractPlayerNameWithServer(playerName);
+
+        // CRITICAL: Only process if this is a WINNING number
+        var activeWinningNumbers = Configuration.WinningNumbers.Take(Configuration.WinningNumberCount);
+        Log.Information($"[Debug] Checking if {rollValue} is in winning numbers: [{string.Join(", ", activeWinningNumbers)}]");
+        
+        if (!activeWinningNumbers.Contains(rollValue))
+        {
+            Log.Information($"[Debug] Roll {rollValue} is not a winning number, ignoring");
+            return; // Ignore non-winning rolls completely
+        }
+        
+        Log.Information($"[Debug] Roll {rollValue} IS a winning number!");
+
+        lock (lockObject)
+        {
+            // Check if this player already won this round
+            if (gameWinners.Any(w => w.PlayerName == normalizedName))
+            {
+                return; // Player already won, ignore additional winning rolls
+            }
+
+            // This is a winner! Record it
+            var winner = new Winner
+            {
+                PlayerName = normalizedName,
+                RollValue = rollValue,
+                WinTime = DateTime.Now,
+                RollOrder = rollCounter++,
+                IsDebugRoll = isDebugRoll
+            };
+
+            gameWinners.Add(winner);
+
+            // Play winner sound
+            if (Configuration.EnableWinnerSound)
+            {
+                PlayWinnerSound(Configuration.SelectedSoundEffect);
+            }
+
+            // Announce winner
+            var debugInfo = isDebugRoll ? " [DEBUG]" : "";
+            ChatGui.Print($"🎉 WINNER: {normalizedName} rolled {rollValue}!{debugInfo}");
+
+            // Auto-close if configured
+            if (Configuration.AutoCloseAfterFirstWinner && gameWinners.Count == 1)
+            {
+                EndGame();
+            }
+        }
+    }
+
+    private string ExtractPlayerNameWithServer(string playerName)
+    {
+        // Handle "You" case first
+        if (playerName.Trim() == "You" && !string.IsNullOrEmpty(Configuration.LocalPlayerName))
+        {
+            return Configuration.LocalPlayerName;
+        }
+
+        // Check each server name from the shared library
+        foreach (var server in ServerData.AllServers)
+        {
+            // Handle "NameServer" format (no separator)
+            if (playerName.EndsWith(server, StringComparison.OrdinalIgnoreCase))
+            {
+                var index = playerName.LastIndexOf(server, StringComparison.OrdinalIgnoreCase);
+                var nameWithoutServer = playerName.Substring(0, index).Trim();
+                
+                // Only format if we actually found and removed a server name
+                if (!string.IsNullOrWhiteSpace(nameWithoutServer))
+                {
+                    return $"{nameWithoutServer} ({server})";
+                }
+            }
+        }
+
+        // No server found, return as-is
+        return playerName.Trim();
+    }
+
+    private void PlayWinnerSound(int soundEffect)
+    {
+        try
+        {
+            // Play Windows system sound based on the selected sound effect
+            // MessageBeep sound types: 0 = default, 0x10 = stop, 0x20 = question, 0x30 = exclamation, 0x40 = asterisk
+            uint soundType = soundEffect switch
+            {
+                1 => 0x30, // Exclamation
+                2 => 0x00, // Default beep
+                3 => 0x40, // Asterisk (informational)
+                4 => 0x20, // Question
+                5 => 0x10, // Stop/Error
+                _ => 0x30  // Default to exclamation
+            };
+            
+            MessageBeep(soundType);
+            Log.Information($"Playing Windows system sound {soundEffect} (type: 0x{soundType:X})");
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Failed to play winner sound: {ex.Message}");
+        }
+    }
+
+    public void PlayTestSound(int soundEffect)
+    {
+        PlayWinnerSound(soundEffect);
     }
 
     private void OnRollDetected(RollEventArgs rollArgs)
     {
-        if (!isGameActive) return;
-
-        lock (lockObject)
-        {
-            rollCollector.AddRoll(rollArgs);
-        }
+        // This method is no longer used in the new winner-only logic
     }
 
     private void OnNewRollAdded(RollEventArgs rollArgs)
     {
-        lock (lockObject)
-        {
-            if (!isGameActive || !Configuration.WinningNumbers.Contains(rollArgs.RollValue))
-                return;
-
-            winners.Add(rollArgs);
-            ChatGui.Print($"[Spamroll] WINNER! {rollArgs.NormalizedPlayerName} rolled {rollArgs.RollValue}!");
-
-            if (Configuration.AutoCloseAfterWin)
-            {
-                StopGame();
-            }
-        }
+        // This method is no longer used in the new winner-only logic
     }
 
     public void StartGame()
@@ -186,11 +325,12 @@ public sealed class Plugin : IDalamudPlugin
             gameCancellation = new CancellationTokenSource();
 
             isGameActive = true;
-            currentRolls.Clear();
-            winners.Clear();
-            rollCollector.ClearRolls();
+            gameWinners.Clear();
+            rollOrder.Clear();
+            rollCounter = 0;
 
-            var winningNumbersText = string.Join(", ", Configuration.WinningNumbers.OrderBy(n => n));
+            var activeWinningNumbers = Configuration.WinningNumbers.Take(Configuration.WinningNumberCount);
+            var winningNumbersText = string.Join(", ", activeWinningNumbers.OrderBy(n => n));
             ChatGui.Print($"[Spamroll] Game started! Winning numbers: {winningNumbersText}");
             ChatGui.Print("[Spamroll] Players, type /random to participate!");
 
@@ -201,10 +341,10 @@ public sealed class Plugin : IDalamudPlugin
                     try
                     {
                         await Task.Delay(Configuration.RollTimeout * 1000, gameCancellation.Token);
-                        if (isGameActive && winners.Count == 0)
+                        if (isGameActive && gameWinners.Count == 0)
                         {
                             ChatGui.Print("[Spamroll] Time's up! No winners this round.");
-                            StopGame();
+                            EndGame();
                         }
                     }
                     catch (OperationCanceledException) { }
@@ -214,6 +354,11 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     public void StopGame()
+    {
+        EndGame();
+    }
+
+    private void EndGame()
     {
         if (!isGameActive)
         {
@@ -226,16 +371,14 @@ public sealed class Plugin : IDalamudPlugin
             gameCancellation?.Cancel();
             isGameActive = false;
 
-            var rollCount = rollCollector.GetRollCount();
-            var winnerCount = winners.Count;
+            var winnerCount = gameWinners.Count;
 
-            ChatGui.Print($"[Spamroll] Game stopped. {rollCount} total rolls, {winnerCount} winners.");
+            ChatGui.Print($"[Spamroll] Game stopped. {winnerCount} winners.");
         }
     }
 
     public bool IsGameActive => isGameActive;
-    public IReadOnlyDictionary<string, RollEventArgs> GetCurrentRolls() => rollCollector.GetAllRolls();
-    public IReadOnlyList<RollEventArgs> GetWinners() => winners;
+    public IReadOnlyList<Winner> GetCurrentWinners() => gameWinners;
 
     private void DrawUI() => WindowSystem.Draw();
 

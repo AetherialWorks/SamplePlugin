@@ -57,101 +57,47 @@ public class MainWindow : Window, IDisposable
 
         ImGui.Separator();
 
-        // Winning numbers display
-        if (Plugin.Configuration.WinningNumbers.Count > 0)
+        // Show current winning numbers clearly
+        var activeWinningNumbers = Plugin.Configuration.WinningNumbers.Take(Plugin.Configuration.WinningNumberCount);
+        ImGui.Text($"Winning Numbers: {string.Join(", ", activeWinningNumbers)}");
+
+        ImGui.Spacing();
+
+        // Only show winners (remove the full roll table)
+        var gameWinners = Plugin.GetCurrentWinners();
+        if (gameWinners.Count > 0)
         {
-            var winningText = string.Join(", ", Plugin.Configuration.WinningNumbers.OrderBy(n => n));
-            ImGui.TextUnformatted($"Winning Numbers: {winningText}");
+            ImGui.Text("Winners This Round:");
+            ImGui.Spacing();
+
+            if (ImGui.BeginTable("WinnersTable", 2, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+            {
+                ImGui.TableSetupColumn("Player", ImGuiTableColumnFlags.WidthStretch);
+                ImGui.TableSetupColumn("Winning Roll", ImGuiTableColumnFlags.WidthFixed, 100);
+                ImGui.TableHeadersRow();
+
+                foreach (var winner in gameWinners)
+                {
+                    ImGui.TableNextRow();
+                    ImGui.TableNextColumn();
+                    ImGui.Text(winner.PlayerName);
+                    ImGui.TableNextColumn();
+                    ImGui.TextColored(new Vector4(0, 1, 0, 1), winner.RollValue.ToString());
+                }
+
+                ImGui.EndTable();
+            }
+        }
+        else if (Plugin.IsGameActive)
+        {
+            ImGui.TextDisabled("No winners yet - waiting for winning numbers...");
         }
         else
         {
-            ImGui.TextColored(new Vector4(1, 1, 0, 1), "No winning numbers configured!");
-        }
-
-        ImGui.Spacing();
-
-        // Winners display
-        var winners = Plugin.GetWinners();
-        if (winners.Count > 0)
-        {
-            ImGui.TextColored(new Vector4(1, 1, 0, 1), $"Winners ({winners.Count}):");
-            
-            using (var winnersChild = ImRaii.Child("Winners", new Vector2(0, 100), true))
-            {
-                if (winnersChild.Success)
-                {
-                    foreach (var winner in winners)
-                    {
-                        ImGui.TextColored(new Vector4(0, 1, 0, 1), $"🎉 {winner.NormalizedPlayerName} rolled {winner.RollValue}!");
-                    }
-                }
-            }
-        }
-
-        ImGui.Spacing();
-
-        // Current rolls display
-        var rolls = Plugin.GetCurrentRolls();
-        ImGui.TextUnformatted($"Current Rolls ({rolls.Count}):");
-
-        using (var rollsChild = ImRaii.Child("Rolls", Vector2.Zero, true))
-        {
-            if (rollsChild.Success)
-            {
-                if (rolls.Count == 0)
-                {
-                    ImGui.TextUnformatted("No rolls yet...");
-                }
-                else
-                {
-                    // Create table for organized display
-                    if (ImGui.BeginTable("RollsTable", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY))
-                    {
-                        ImGui.TableSetupColumn("Player", ImGuiTableColumnFlags.WidthStretch);
-                        ImGui.TableSetupColumn("Roll", ImGuiTableColumnFlags.WidthFixed, 60);
-                        ImGui.TableSetupColumn("Status", ImGuiTableColumnFlags.WidthFixed, 80);
-                        ImGui.TableHeadersRow();
-
-                        foreach (var roll in rolls.Values.OrderBy(r => r.RollOrder))
-                        {
-                            ImGui.TableNextRow();
-                            
-                            ImGui.TableSetColumnIndex(0);
-                            ImGui.TextUnformatted(roll.NormalizedPlayerName);
-                            
-                            ImGui.TableSetColumnIndex(1);
-                            var isWinning = Plugin.Configuration.WinningNumbers.Contains(roll.RollValue);
-                            if (isWinning)
-                            {
-                                ImGui.TextColored(new Vector4(0, 1, 0, 1), roll.RollValue.ToString());
-                            }
-                            else
-                            {
-                                ImGui.TextUnformatted(roll.RollValue.ToString());
-                            }
-                            
-                            ImGui.TableSetColumnIndex(2);
-                            if (isWinning)
-                            {
-                                ImGui.TextColored(new Vector4(1, 1, 0, 1), "WINNER!");
-                            }
-                            else
-                            {
-                                ImGui.TextUnformatted("-");
-                            }
-                        }
-                        
-                        ImGui.EndTable();
-                    }
-                }
-            }
+            ImGui.TextDisabled("Start a game to see winners");
         }
 
         // Bottom buttons
         ImGui.Separator();
-        if (ImGui.Button("Clear Rolls") && !Plugin.IsGameActive)
-        {
-            // Clear would be handled by the plugin if we exposed it
-        }
     }
 }

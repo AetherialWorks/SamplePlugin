@@ -10,7 +10,6 @@ public class ConfigWindow : Window, IDisposable
 {
     private Configuration Configuration;
     private Plugin Plugin;
-    private int[] winningNumberInputs = new int[5];
 
     public ConfigWindow(Plugin plugin) : base("Spamroll Giveaway Configuration###SpamrollConfig")
     {
@@ -20,12 +19,6 @@ public class ConfigWindow : Window, IDisposable
 
         Configuration = plugin.Configuration;
         Plugin = plugin;
-
-        // Initialize input fields with current winning numbers
-        for (int i = 0; i < 5; i++)
-        {
-            winningNumberInputs[i] = i < Configuration.WinningNumbers.Count ? Configuration.WinningNumbers[i] : 0;
-        }
     }
 
     public void Dispose() { }
@@ -45,37 +38,52 @@ public class ConfigWindow : Window, IDisposable
 
     public override void Draw()
     {
-        ImGui.Text("Configure winning numbers (0-999):");
+        ImGui.Text("Configure winning numbers:");
         ImGui.Separator();
 
-        ImGui.Text("Winning Numbers (leave 0 to disable slot):");
-        
-        bool numbersChanged = false;
-        for (int i = 0; i < 5; i++)
+        // Step 1: Let host choose HOW MANY winning numbers they want
+        var winningCount = Configuration.WinningNumberCount;
+        if (ImGui.SliderInt("Number of Winning Numbers", ref winningCount, 1, 9))
         {
-            ImGui.PushID(i);
-            ImGui.SetNextItemWidth(80);
-            if (ImGui.InputInt($"#{i + 1}", ref winningNumberInputs[i]))
+            Configuration.WinningNumberCount = winningCount;
+            
+            // Resize the winning numbers list to match
+            if (Configuration.WinningNumbers.Count < winningCount)
             {
-                if (winningNumberInputs[i] < 0) winningNumberInputs[i] = 0;
-                if (winningNumberInputs[i] > 999) winningNumberInputs[i] = 999;
-                numbersChanged = true;
-            }
-            if (i < 4) ImGui.SameLine();
-            ImGui.PopID();
-        }
-
-        if (numbersChanged)
-        {
-            Configuration.WinningNumbers.Clear();
-            for (int i = 0; i < 5; i++)
-            {
-                if (winningNumberInputs[i] > 0)
+                // Add default numbers (111, 222, 333, etc.)
+                for (int i = Configuration.WinningNumbers.Count; i < winningCount; i++)
                 {
-                    Configuration.WinningNumbers.Add(winningNumberInputs[i]);
+                    Configuration.WinningNumbers.Add((i + 1) * 111);
                 }
             }
+            else if (Configuration.WinningNumbers.Count > winningCount)
+            {
+                // Remove excess numbers
+                Configuration.WinningNumbers.RemoveRange(winningCount, Configuration.WinningNumbers.Count - winningCount);
+            }
+            
             Configuration.Save();
+        }
+
+        ImGui.Spacing();
+
+        // Step 2: Show exactly that many input fields (vertical stack)
+        ImGui.Text("Winning Numbers:");
+        for (int i = 0; i < Configuration.WinningNumberCount; i++)
+        {
+            var valueStr = Configuration.WinningNumbers[i].ToString();
+            if (ImGui.InputText($"Winning Number {i + 1}", ref valueStr, 3, ImGuiInputTextFlags.CharsDecimal))
+            {
+                if (int.TryParse(valueStr, out int value) && value >= 1 && value <= 999)
+                {
+                    Configuration.WinningNumbers[i] = value;
+                    Configuration.Save();
+                }
+                else if (string.IsNullOrEmpty(valueStr))
+                {
+                    // Allow empty field temporarily but don't save invalid state
+                }
+            }
         }
 
         ImGui.Spacing();
@@ -93,18 +101,53 @@ public class ConfigWindow : Window, IDisposable
         if (ImGui.IsItemHovered())
             ImGui.SetTooltip("0 = No timeout");
 
-        var autoClose = Configuration.AutoCloseAfterWin;
+        var autoClose = Configuration.AutoCloseAfterFirstWinner;
         if (ImGui.Checkbox("Auto-close game after first winner", ref autoClose))
         {
-            Configuration.AutoCloseAfterWin = autoClose;
+            Configuration.AutoCloseAfterFirstWinner = autoClose;
             Configuration.Save();
         }
 
-        var showHistory = Configuration.ShowRollHistory;
-        if (ImGui.Checkbox("Show roll history in main window", ref showHistory))
+        // Step 3: Add sound settings
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+
+        ImGui.Text("Sound Settings:");
+        var enableSound = Configuration.EnableWinnerSound;
+        if (ImGui.Checkbox("Enable Winner Sound", ref enableSound))
         {
-            Configuration.ShowRollHistory = showHistory;
+            Configuration.EnableWinnerSound = enableSound;
             Configuration.Save();
+        }
+
+        if (Configuration.EnableWinnerSound)
+        {
+            // Windows system sound selection
+            var soundEffects = new string[]
+            {
+                "Sound 1 - Exclamation",
+                "Sound 2 - Default Beep",
+                "Sound 3 - Asterisk (Info)",
+                "Sound 4 - Question",
+                "Sound 5 - Stop/Error"
+            };
+
+            var selectedSound = Configuration.SelectedSoundEffect - 1; // Convert to 0-based index
+            if (selectedSound < 0 || selectedSound >= soundEffects.Length)
+                selectedSound = 0; // Default to first sound (Exclamation)
+
+            if (ImGui.Combo("Winner Sound Effect", ref selectedSound, soundEffects, soundEffects.Length))
+            {
+                Configuration.SelectedSoundEffect = selectedSound + 1; // Convert back to 1-based
+                Configuration.Save();
+            }
+
+            // Test sound button
+            if (ImGui.Button("Test Sound"))
+            {
+                Plugin.PlayTestSound(Configuration.SelectedSoundEffect);
+            }
         }
 
         ImGui.Spacing();
@@ -158,9 +201,6 @@ public class ConfigWindow : Window, IDisposable
             }
             else
             {
-                var winningText = string.Join(", ", Configuration.WinningNumbers.OrderBy(n => n));
-                ImGui.Text($"Current winning numbers: {winningText}");
-                
                 if (ImGui.Button("Start Game"))
                 {
                     Plugin.StartGame();
