@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections.Generic;
 using System.Numerics;
 using Dalamud.Interface.Windowing;
 using Dalamud.Bindings.ImGui;
@@ -36,6 +37,38 @@ public class ConfigWindow : Window, IDisposable
     }
 
     public override void Draw()
+    {
+        if (ImGui.BeginTabBar("ConfigTabs"))
+        {
+            if (ImGui.BeginTabItem("Game Settings"))
+            {
+                DrawGameSettings();
+                ImGui.EndTabItem();
+            }
+            
+            if (ImGui.BeginTabItem("UI Settings"))
+            {
+                DrawUISettings();
+                ImGui.EndTabItem();
+            }
+            
+            if (ImGui.BeginTabItem("Chat Templates"))
+            {
+                DrawChatTemplates();
+                ImGui.EndTabItem();
+            }
+            
+            if (ImGui.BeginTabItem("Presets"))
+            {
+                DrawPresets();
+                ImGui.EndTabItem();
+            }
+            
+            ImGui.EndTabBar();
+        }
+    }
+    
+    private void DrawGameSettings()
     {
         ImGui.Text("Configure winning numbers:");
         ImGui.Separator();
@@ -257,5 +290,236 @@ public class ConfigWindow : Window, IDisposable
                 }
             }
         }
+    }
+    
+    private void DrawUISettings()
+    {
+        ImGui.Text("User Interface Settings:");
+        ImGui.Separator();
+        
+        var showGameStats = Configuration.ShowGameStats;
+        if (ImGui.Checkbox("Show Game Statistics", ref showGameStats))
+        {
+            Configuration.ShowGameStats = showGameStats;
+            Configuration.Save();
+        }
+        
+        var showProgressBar = Configuration.ShowProgressBar;
+        if (ImGui.Checkbox("Show Progress Bar", ref showProgressBar))
+        {
+            Configuration.ShowProgressBar = showProgressBar;
+            Configuration.Save();
+        }
+        
+        var showElapsedTime = Configuration.ShowElapsedTime;
+        if (ImGui.Checkbox("Show Elapsed Time", ref showElapsedTime))
+        {
+            Configuration.ShowElapsedTime = showElapsedTime;
+            Configuration.Save();
+        }
+        
+        var showParticipantCount = Configuration.ShowParticipantCount;
+        if (ImGui.Checkbox("Show Participant Count", ref showParticipantCount))
+        {
+            Configuration.ShowParticipantCount = showParticipantCount;
+            Configuration.Save();
+        }
+        
+        ImGui.Spacing();
+        ImGui.Text("Winner Display:");
+        
+        var sortOrder = (int)Configuration.WinnerSortOrder;
+        if (ImGui.Combo("Default Winner Sort Order", ref sortOrder, "Win Time\0Roll Value\0Player Name\0"))
+        {
+            Configuration.WinnerSortOrder = (WinnerSortOrder)sortOrder;
+            Configuration.Save();
+        }
+        
+        ImGui.Spacing();
+        ImGui.Text("Game History:");
+        
+        var saveHistory = Configuration.SaveGameHistory;
+        if (ImGui.Checkbox("Save Game History", ref saveHistory))
+        {
+            Configuration.SaveGameHistory = saveHistory;
+            Configuration.Save();
+        }
+        
+        if (Configuration.SaveGameHistory)
+        {
+            var maxEntries = Configuration.MaxHistoryEntries;
+            if (ImGui.SliderInt("Max History Entries", ref maxEntries, 10, 100))
+            {
+                Configuration.MaxHistoryEntries = maxEntries;
+                Configuration.Save();
+            }
+        }
+        
+        var movable = Configuration.IsConfigWindowMovable;
+        if (ImGui.Checkbox("Movable Config Window", ref movable))
+        {
+            Configuration.IsConfigWindowMovable = movable;
+            Configuration.Save();
+        }
+    }
+    
+    private void DrawChatTemplates()
+    {
+        ImGui.Text("Chat Message Templates:");
+        ImGui.Separator();
+        
+        var useCustomTemplates = Configuration.UseCustomTemplates;
+        if (ImGui.Checkbox("Use Custom Templates", ref useCustomTemplates))
+        {
+            Configuration.UseCustomTemplates = useCustomTemplates;
+            Configuration.Save();
+        }
+        
+        if (Configuration.UseCustomTemplates)
+        {
+            ImGui.Spacing();
+            ImGui.Text("Available placeholders: {player}, {roll}, {numbers}, {winnerCount}");
+            ImGui.Spacing();
+            
+            var winnerTemplate = Configuration.WinnerAnnouncementTemplate;
+            if (ImGui.InputText("Winner Announcement", ref winnerTemplate, 200))
+            {
+                Configuration.WinnerAnnouncementTemplate = winnerTemplate;
+                Configuration.Save();
+            }
+            
+            var startTemplate = Configuration.GameStartTemplate;
+            if (ImGui.InputText("Game Start Message", ref startTemplate, 200))
+            {
+                Configuration.GameStartTemplate = startTemplate;
+                Configuration.Save();
+            }
+            
+            var endTemplate = Configuration.GameEndTemplate;
+            if (ImGui.InputText("Game End Message", ref endTemplate, 200))
+            {
+                Configuration.GameEndTemplate = endTemplate;
+                Configuration.Save();
+            }
+            
+            ImGui.Spacing();
+            if (ImGui.Button("Reset to Defaults"))
+            {
+                Configuration.WinnerAnnouncementTemplate = "WINNER: {player} rolled {roll}!";
+                Configuration.GameStartTemplate = "[Spamroll] Game started! Winning numbers: {numbers}";
+                Configuration.GameEndTemplate = "[Spamroll] Game ended! {winnerCount} winners.";
+                Configuration.Save();
+            }
+        }
+        else
+        {
+            ImGui.TextDisabled("Using default chat messages");
+        }
+    }
+    
+    private void DrawPresets()
+    {
+        ImGui.Text("Game Presets:");
+        ImGui.Separator();
+        
+        // Default presets
+        if (ImGui.Button("Quick Roll (1-100)"))
+        {
+            ApplyPreset(new GamePreset
+            {
+                Name = "Quick Roll",
+                WinningNumbers = new List<int> { 1, 50, 100 },
+                WinningNumberCount = 3,
+                AllowMultipleWinners = true,
+                RollTimeout = 60
+            });
+        }
+        
+        ImGui.SameLine();
+        if (ImGui.Button("Triple Numbers"))
+        {
+            ApplyPreset(new GamePreset
+            {
+                Name = "Triple Numbers",
+                WinningNumbers = new List<int> { 111, 222, 333, 444, 555, 666, 777, 888, 999 },
+                WinningNumberCount = 9,
+                AllowMultipleWinners = true,
+                RollTimeout = 120
+            });
+        }
+        
+        ImGui.SameLine();
+        if (ImGui.Button("Single Winner"))
+        {
+            ApplyPreset(new GamePreset
+            {
+                Name = "Single Winner",
+                WinningNumbers = new List<int> { 777 },
+                WinningNumberCount = 1,
+                AllowMultipleWinners = false,
+                RollTimeout = 60
+            });
+        }
+        
+        ImGui.Spacing();
+        ImGui.Separator();
+        ImGui.Spacing();
+        
+        // Custom presets
+        ImGui.Text("Custom Presets:");
+        
+        if (Configuration.GamePresets.Count == 0)
+        {
+            ImGui.TextDisabled("No custom presets saved");
+        }
+        else
+        {
+            foreach (var preset in Configuration.GamePresets)
+            {
+                if (ImGui.Button($"Load: {preset.Name}"))
+                {
+                    ApplyPreset(preset);
+                }
+                ImGui.SameLine();
+                if (ImGui.SmallButton($"Delete##{preset.Name}"))
+                {
+                    Configuration.GamePresets.Remove(preset);
+                    Configuration.Save();
+                    break;
+                }
+                if (!string.IsNullOrEmpty(preset.Description))
+                {
+                    ImGui.SameLine();
+                    ImGui.TextDisabled($"- {preset.Description}");
+                }
+            }
+        }
+        
+        ImGui.Spacing();
+        if (ImGui.Button("Save Current as Preset"))
+        {
+            var preset = new GamePreset
+            {
+                Name = $"Preset {Configuration.GamePresets.Count + 1}",
+                WinningNumbers = new List<int>(Configuration.WinningNumbers),
+                WinningNumberCount = Configuration.WinningNumberCount,
+                AllowMultipleWinners = Configuration.AllowMultipleWinners,
+                AllowSamePlayerMultipleWins = Configuration.AllowSamePlayerMultipleWins,
+                RollTimeout = Configuration.RollTimeout
+            };
+            
+            Configuration.GamePresets.Add(preset);
+            Configuration.Save();
+        }
+    }
+    
+    private void ApplyPreset(GamePreset preset)
+    {
+        Configuration.WinningNumbers = new List<int>(preset.WinningNumbers);
+        Configuration.WinningNumberCount = preset.WinningNumberCount;
+        Configuration.AllowMultipleWinners = preset.AllowMultipleWinners;
+        Configuration.AllowSamePlayerMultipleWins = preset.AllowSamePlayerMultipleWins;
+        Configuration.RollTimeout = preset.RollTimeout;
+        Configuration.Save();
     }
 }

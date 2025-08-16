@@ -28,6 +28,14 @@ public class Winner
     public bool IsDebugRoll { get; set; }
 }
 
+public class RollData
+{
+    public string PlayerName { get; set; } = "";
+    public int RollValue { get; set; }
+    public DateTime RollTime { get; set; }
+    public bool IsDebugRoll { get; set; }
+}
+
 public sealed class Plugin : IDalamudPlugin
 {
     // Windows API for playing system sounds
@@ -54,11 +62,16 @@ public sealed class Plugin : IDalamudPlugin
 
     // Game state
     private bool isGameActive = false;
+    private bool isGamePaused = false;
     private readonly List<Winner> gameWinners = new();
+    private readonly List<RollData> allRolls = new();
     private readonly Dictionary<string, int> rollOrder = new(); // For tiebreaking
+    private readonly HashSet<string> participants = new();
     private int rollCounter = 0;
     private CancellationTokenSource? gameCancellation;
     private readonly object lockObject = new object();
+    private GameStats? currentGameStats;
+    private DateTime gameStartTime;
 
 
     public Plugin()
@@ -141,7 +154,7 @@ public sealed class Plugin : IDalamudPlugin
 
     private void OnChatMessage(Dalamud.Game.Text.XivChatType type, int timestamp, ref Dalamud.Game.Text.SeStringHandling.SeString sender, ref Dalamud.Game.Text.SeStringHandling.SeString message, ref bool isHandled)
     {
-        if (!isGameActive) return;
+        if (!isGameActive || isGamePaused) return;
 
         var messageText = message.TextValue;
         
@@ -193,6 +206,21 @@ public sealed class Plugin : IDalamudPlugin
 
         // Extract and format player name with server
         var normalizedName = ExtractPlayerNameWithServer(playerName);
+        
+        // Track all rolls for statistics
+        lock (lockObject)
+        {
+            allRolls.Add(new RollData
+            {
+                PlayerName = normalizedName,
+                RollValue = rollValue,
+                RollTime = DateTime.Now,
+                IsDebugRoll = isDebugRoll
+            });
+            
+            participants.Add(normalizedName);
+            UpdateGameStats();
+        }
 
         // CRITICAL: Only process if this is a WINNING number
         var activeWinningNumbers = Configuration.WinningNumbers.Take(Configuration.WinningNumberCount);
@@ -261,7 +289,17 @@ public sealed class Plugin : IDalamudPlugin
 
             // Announce winner
             var debugInfo = isDebugRoll ? " [DEBUG]" : "";
-            ChatGui.Print($"🎉 WINNER: {normalizedName} rolled {rollValue}!{debugInfo}");
+            if (Configuration.UseCustomTemplates)
+            {
+                var announcement = Configuration.WinnerAnnouncementTemplate
+                    .Replace("{player}", normalizedName)
+                    .Replace("{roll}", rollValue.ToString());
+                ChatGui.Print($"{announcement}{debugInfo}");
+            }
+            else
+            {
+                ChatGui.Print($"WINNER: {normalizedName} rolled {rollValue}!{debugInfo}");
+            }
 
             // Auto-close logic
             if (Configuration.AutoCloseAfterFirstWinner && !Configuration.AllowMultipleWinners && gameWinners.Count == 1)
@@ -357,6 +395,45 @@ public sealed class Plugin : IDalamudPlugin
     {
         PlayWinnerSound(soundEffect);
     }
+    
+    private void UpdateGameStats()
+    {
+        if (currentGameStats == null) return;
+        
+        currentGameStats.TotalParticipants = participants.Count;
+        currentGameStats.TotalRolls = allRolls.Count;
+        
+        if (allRolls.Count > 0)
+        {
+            currentGameStats.MinRoll = allRolls.Min(r => r.RollValue);
+            currentGameStats.MaxRoll = allRolls.Max(r => r.RollValue);
+            currentGameStats.AverageRoll = allRolls.Average(r => r.RollValue);
+        }
+    }
+    
+    private void SaveGameToHistory()
+    {
+        if (!Configuration.SaveGameHistory || currentGameStats == null) return;
+        
+        var historyEntry = new GameHistoryEntry
+        {
+            StartTime = gameStartTime,
+            EndTime = DateTime.Now,
+            WinningNumbers = Configuration.WinningNumbers.Take(Configuration.WinningNumberCount).ToList(),
+            Winners = new List<Winner>(gameWinners),
+            Stats = currentGameStats
+        };
+        
+        Configuration.GameHistory.Insert(0, historyEntry);
+        
+        // Limit history size
+        while (Configuration.GameHistory.Count > Configuration.MaxHistoryEntries)
+        {
+            Configuration.GameHistory.RemoveAt(Configuration.GameHistory.Count - 1);
+        }
+        
+        Configuration.Save();
+    }
 
 
     private void OnRollDetected(RollEventArgs rollArgs)
@@ -389,13 +466,31 @@ public sealed class Plugin : IDalamudPlugin
             gameCancellation = new CancellationTokenSource();
 
             isGameActive = true;
+            isGamePaused = false;
             gameWinners.Clear();
+            allRolls.Clear();
+            participants.Clear();
             rollOrder.Clear();
             rollCounter = 0;
+            gameStartTime = DateTime.Now;
+            
+            currentGameStats = new GameStats
+            {
+                GameStartTime = gameStartTime
+            };
 
             var activeWinningNumbers = Configuration.WinningNumbers.Take(Configuration.WinningNumberCount);
             var winningNumbersText = string.Join(", ", activeWinningNumbers.OrderBy(n => n));
-            ChatGui.Print($"[Spamroll] Game started! Winning numbers: {winningNumbersText}");
+            
+            if (Configuration.UseCustomTemplates)
+            {
+                var startMessage = Configuration.GameStartTemplate.Replace("{numbers}", winningNumbersText);
+                ChatGui.Print(startMessage);
+            }
+            else
+            {
+                ChatGui.Print($"[Spamroll] Game started! Winning numbers: {winningNumbersText}");
+            }
             ChatGui.Print("[Spamroll] Players, type /random to participate!");
 
             if (Configuration.RollTimeout > 0)
@@ -434,16 +529,30 @@ public sealed class Plugin : IDalamudPlugin
         {
             gameCancellation?.Cancel();
             isGameActive = false;
+            isGamePaused = false;
+            
+            if (currentGameStats != null)
+            {
+                currentGameStats.GameEndTime = DateTime.Now;
+            }
 
             var winnerCount = gameWinners.Count;
+            
+            // Save to history
+            SaveGameToHistory();
 
-            if (Configuration.AllowMultipleWinners && winnerCount > 0)
+            if (Configuration.UseCustomTemplates)
+            {
+                var endMessage = Configuration.GameEndTemplate.Replace("{winnerCount}", winnerCount.ToString());
+                ChatGui.Print(endMessage);
+            }
+            else if (Configuration.AllowMultipleWinners && winnerCount > 0)
             {
                 // Show detailed results for multiple winners
                 ChatGui.Print($"[Spamroll] Game stopped. {winnerCount} winners:");
                 foreach (var winner in gameWinners.OrderBy(w => w.RollValue))
                 {
-                    ChatGui.Print($"  🎉 {winner.PlayerName} won {winner.RollValue}");
+                    ChatGui.Print($"  {winner.PlayerName} won {winner.RollValue}");
                 }
             }
             else
@@ -454,7 +563,59 @@ public sealed class Plugin : IDalamudPlugin
     }
 
     public bool IsGameActive => isGameActive;
+    public bool IsGamePaused => isGamePaused;
     public IReadOnlyList<Winner> GetCurrentWinners() => gameWinners;
+    public GameStats? GetCurrentGameStats() => currentGameStats;
+    public IReadOnlyList<RollData> GetAllRolls() => allRolls;
+    public int GetParticipantCount() => participants.Count;
+    
+    public void PauseGame()
+    {
+        if (isGameActive && !isGamePaused)
+        {
+            isGamePaused = true;
+            ChatGui.Print("[Spamroll] Game paused.");
+        }
+    }
+    
+    public void ResumeGame()
+    {
+        if (isGameActive && isGamePaused)
+        {
+            isGamePaused = false;
+            ChatGui.Print("[Spamroll] Game resumed.");
+        }
+    }
+    
+    public void RestartGame()
+    {
+        if (isGameActive)
+        {
+            StopGame();
+        }
+        StartGame();
+    }
+    
+    public void AnnounceWinners()
+    {
+        if (gameWinners.Count == 0)
+        {
+            ChatGui.Print("[Spamroll] No winners to announce.");
+            return;
+        }
+        
+        ChatGui.Print($"[Spamroll] Current winners ({gameWinners.Count}):");
+        foreach (var winner in gameWinners.OrderBy(w => w.WinTime))
+        {
+            ChatGui.Print($"  {winner.PlayerName} - {winner.RollValue}");
+        }
+    }
+    
+    public void ClearHistory()
+    {
+        Configuration.GameHistory.Clear();
+        Configuration.Save();
+    }
 
     private void DrawUI() => WindowSystem.Draw();
 
