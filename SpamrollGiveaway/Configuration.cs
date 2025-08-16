@@ -26,17 +26,6 @@ public enum WinnerSortOrder
     PlayerName = 2
 }
 
-public class GameStats
-{
-    public int TotalParticipants { get; set; }
-    public int TotalRolls { get; set; }
-    public int MinRoll { get; set; } = int.MaxValue;
-    public int MaxRoll { get; set; } = int.MinValue;
-    public double AverageRoll { get; set; }
-    public DateTime GameStartTime { get; set; }
-    public DateTime? GameEndTime { get; set; }
-    public TimeSpan ElapsedTime => (GameEndTime ?? DateTime.Now) - GameStartTime;
-}
 
 public class GamePreset
 {
@@ -49,15 +38,6 @@ public class GamePreset
     public int RollTimeout { get; set; }
 }
 
-public class GameHistoryEntry
-{
-    public DateTime StartTime { get; set; }
-    public DateTime? EndTime { get; set; }
-    public List<int> WinningNumbers { get; set; } = new();
-    public List<Winner> Winners { get; set; } = new();
-    public GameStats Stats { get; set; } = new();
-    public string PresetName { get; set; } = "";
-}
 
 [Serializable]
 public class Configuration : IPluginConfiguration
@@ -89,16 +69,9 @@ public class Configuration : IPluginConfiguration
     
     // UI Settings
     public WinnerSortOrder WinnerSortOrder { get; set; } = WinnerSortOrder.WinTime;
-    public bool ShowGameStats { get; set; } = true;
     public bool ShowProgressBar { get; set; } = true;
-    public bool ShowElapsedTime { get; set; } = true;
-    public bool AutoAnnounceWinners { get; set; } = true;
-    public bool ShowParticipantCount { get; set; } = true;
     
     // Game Management
-    public bool SaveGameHistory { get; set; } = true;
-    public int MaxHistoryEntries { get; set; } = 50;
-    public List<GameHistoryEntry> GameHistory { get; set; } = new();
     public List<GamePreset> GamePresets { get; set; } = new();
     
     // Chat Integration

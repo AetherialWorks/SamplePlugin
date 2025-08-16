@@ -46,11 +46,6 @@ public class ConfigWindow : Window, IDisposable
                 ImGui.EndTabItem();
             }
             
-            if (ImGui.BeginTabItem("UI Settings"))
-            {
-                DrawUISettings();
-                ImGui.EndTabItem();
-            }
             
             if (ImGui.BeginTabItem("Chat Templates"))
             {
@@ -292,76 +287,6 @@ public class ConfigWindow : Window, IDisposable
         }
     }
     
-    private void DrawUISettings()
-    {
-        ImGui.Text("User Interface Settings:");
-        ImGui.Separator();
-        
-        var showGameStats = Configuration.ShowGameStats;
-        if (ImGui.Checkbox("Show Game Statistics", ref showGameStats))
-        {
-            Configuration.ShowGameStats = showGameStats;
-            Configuration.Save();
-        }
-        
-        var showProgressBar = Configuration.ShowProgressBar;
-        if (ImGui.Checkbox("Show Progress Bar", ref showProgressBar))
-        {
-            Configuration.ShowProgressBar = showProgressBar;
-            Configuration.Save();
-        }
-        
-        var showElapsedTime = Configuration.ShowElapsedTime;
-        if (ImGui.Checkbox("Show Elapsed Time", ref showElapsedTime))
-        {
-            Configuration.ShowElapsedTime = showElapsedTime;
-            Configuration.Save();
-        }
-        
-        var showParticipantCount = Configuration.ShowParticipantCount;
-        if (ImGui.Checkbox("Show Participant Count", ref showParticipantCount))
-        {
-            Configuration.ShowParticipantCount = showParticipantCount;
-            Configuration.Save();
-        }
-        
-        ImGui.Spacing();
-        ImGui.Text("Winner Display:");
-        
-        var sortOrder = (int)Configuration.WinnerSortOrder;
-        if (ImGui.Combo("Default Winner Sort Order", ref sortOrder, "Win Time\0Roll Value\0Player Name\0"))
-        {
-            Configuration.WinnerSortOrder = (WinnerSortOrder)sortOrder;
-            Configuration.Save();
-        }
-        
-        ImGui.Spacing();
-        ImGui.Text("Game History:");
-        
-        var saveHistory = Configuration.SaveGameHistory;
-        if (ImGui.Checkbox("Save Game History", ref saveHistory))
-        {
-            Configuration.SaveGameHistory = saveHistory;
-            Configuration.Save();
-        }
-        
-        if (Configuration.SaveGameHistory)
-        {
-            var maxEntries = Configuration.MaxHistoryEntries;
-            if (ImGui.SliderInt("Max History Entries", ref maxEntries, 10, 100))
-            {
-                Configuration.MaxHistoryEntries = maxEntries;
-                Configuration.Save();
-            }
-        }
-        
-        var movable = Configuration.IsConfigWindowMovable;
-        if (ImGui.Checkbox("Movable Config Window", ref movable))
-        {
-            Configuration.IsConfigWindowMovable = movable;
-            Configuration.Save();
-        }
-    }
     
     private void DrawChatTemplates()
     {

@@ -9,13 +9,14 @@ using FFXIVSharedLibrary.Chat;
 using FFXIVSharedLibrary.Player;
 using System.Collections.Generic;
 using System.Linq;
-using System.Threading;
-using System.Threading.Tasks;
 using System;
 using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;
+using System.Threading;
+using System.Threading.Tasks;
 using ECommons;
 using ECommons.Automation;
+using ECommons.Throttlers;
 
 namespace SpamrollGiveaway;
 
@@ -64,21 +65,13 @@ public sealed class Plugin : IDalamudPlugin
     private bool isGameActive = false;
     private bool isGamePaused = false;
     private readonly List<Winner> gameWinners = new();
-    private readonly List<RollData> allRolls = new();
-    private readonly Dictionary<string, int> rollOrder = new(); // For tiebreaking
-    private readonly HashSet<string> participants = new();
     private int rollCounter = 0;
     private CancellationTokenSource? gameCancellation;
     private readonly object lockObject = new object();
-    private GameStats? currentGameStats;
     private DateTime gameStartTime;
-    
-    // Message queue with timer-based sending
+    private DateTime? pendingInstructionTime;
     private readonly Queue<string> messageQueue = new();
-    private readonly object messageQueueLock = new object();
-    private System.Threading.Timer? messageTimer;
     private DateTime lastMessageSent = DateTime.MinValue;
-    private const int MessageDelayMs = 2000;
 
 
     public Plugin()
@@ -119,6 +112,9 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw += DrawUI;
         PluginInterface.UiBuilder.OpenConfigUi += ToggleConfigUI;
         PluginInterface.UiBuilder.OpenMainUi += ToggleMainUI;
+        
+        // Subscribe to framework update for delayed message sending
+        PluginInterface.UiBuilder.Draw += OnFrameworkUpdate;
 
         Log.Information($"Spamroll Giveaway loaded successfully!");
     }
@@ -128,14 +124,7 @@ public sealed class Plugin : IDalamudPlugin
         gameCancellation?.Cancel();
         gameCancellation?.Dispose();
         
-        // Clean up message queue and timer
-        lock (messageQueueLock)
-        {
-            messageTimer?.Dispose();
-            messageTimer = null;
-            messageQueue.Clear();
-            lastMessageSent = DateTime.MinValue;
-        }
+        // Clean up any remaining resources
 
         WindowSystem.RemoveAllWindows();
 
@@ -151,6 +140,7 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= DrawUI;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUI;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
+        PluginInterface.UiBuilder.Draw -= OnFrameworkUpdate;
         
         // Dispose ECommons
         ECommonsMain.Dispose();
@@ -223,20 +213,6 @@ public sealed class Plugin : IDalamudPlugin
         // Extract and format player name with server
         var normalizedName = ExtractPlayerNameWithServer(playerName);
         
-        // Track all rolls for statistics
-        lock (lockObject)
-        {
-            allRolls.Add(new RollData
-            {
-                PlayerName = normalizedName,
-                RollValue = rollValue,
-                RollTime = DateTime.Now,
-                IsDebugRoll = isDebugRoll
-            });
-            
-            participants.Add(normalizedName);
-            UpdateGameStats();
-        }
 
         // CRITICAL: Only process if this is a WINNING number
         var activeWinningNumbers = Configuration.WinningNumbers.Take(Configuration.WinningNumberCount);
@@ -426,53 +402,17 @@ public sealed class Plugin : IDalamudPlugin
     
     private void SendChatMessage(string message)
     {
-        lock (messageQueueLock)
-        {
-            messageQueue.Enqueue(message);
-            
-            // If this is the first message or enough time has passed, send immediately
-            var timeSinceLastMessage = DateTime.Now - lastMessageSent;
-            if (timeSinceLastMessage.TotalMilliseconds >= MessageDelayMs)
-            {
-                ProcessNextMessage();
-            }
-            else if (messageTimer == null)
-            {
-                // Start timer to process messages
-                var delayNeeded = MessageDelayMs - (int)timeSinceLastMessage.TotalMilliseconds;
-                messageTimer = new System.Threading.Timer(OnMessageTimer, null, delayNeeded, Timeout.Infinite);
-            }
-        }
+        // For single messages, send immediately
+        SendChatMessageImmediate(message);
+        lastMessageSent = DateTime.Now;
     }
     
-    private void OnMessageTimer(object? state)
+    private void SendChatMessageImmediate(string message)
     {
-        lock (messageQueueLock)
-        {
-            messageTimer?.Dispose();
-            messageTimer = null;
-            
-            ProcessNextMessage();
-            
-            // If there are more messages, schedule the next one
-            if (messageQueue.Count > 0)
-            {
-                messageTimer = new System.Threading.Timer(OnMessageTimer, null, MessageDelayMs, Timeout.Infinite);
-            }
-        }
-    }
-    
-    private void ProcessNextMessage()
-    {
-        if (messageQueue.Count == 0) return;
-        
-        var messageToSend = messageQueue.Dequeue();
-        
         try
         {
-            var command = GetChatCommand(Configuration.AnnouncementChannel) + messageToSend;
+            var command = GetChatCommand(Configuration.AnnouncementChannel) + message;
             Chat.SendMessage(command);
-            lastMessageSent = DateTime.Now;
         }
         catch (Exception ex)
         {
@@ -480,44 +420,11 @@ public sealed class Plugin : IDalamudPlugin
         }
     }
     
-    private void UpdateGameStats()
+    private void QueueChatMessage(string message)
     {
-        if (currentGameStats == null) return;
-        
-        currentGameStats.TotalParticipants = participants.Count;
-        currentGameStats.TotalRolls = allRolls.Count;
-        
-        if (allRolls.Count > 0)
-        {
-            currentGameStats.MinRoll = allRolls.Min(r => r.RollValue);
-            currentGameStats.MaxRoll = allRolls.Max(r => r.RollValue);
-            currentGameStats.AverageRoll = allRolls.Average(r => r.RollValue);
-        }
+        messageQueue.Enqueue(message);
     }
     
-    private void SaveGameToHistory()
-    {
-        if (!Configuration.SaveGameHistory || currentGameStats == null) return;
-        
-        var historyEntry = new GameHistoryEntry
-        {
-            StartTime = gameStartTime,
-            EndTime = DateTime.Now,
-            WinningNumbers = Configuration.WinningNumbers.Take(Configuration.WinningNumberCount).ToList(),
-            Winners = new List<Winner>(gameWinners),
-            Stats = currentGameStats
-        };
-        
-        Configuration.GameHistory.Insert(0, historyEntry);
-        
-        // Limit history size
-        while (Configuration.GameHistory.Count > Configuration.MaxHistoryEntries)
-        {
-            Configuration.GameHistory.RemoveAt(Configuration.GameHistory.Count - 1);
-        }
-        
-        Configuration.Save();
-    }
 
 
     private void OnRollDetected(RollEventArgs rollArgs)
@@ -552,16 +459,8 @@ public sealed class Plugin : IDalamudPlugin
             isGameActive = true;
             isGamePaused = false;
             gameWinners.Clear();
-            allRolls.Clear();
-            participants.Clear();
-            rollOrder.Clear();
             rollCounter = 0;
             gameStartTime = DateTime.Now;
-            
-            currentGameStats = new GameStats
-            {
-                GameStartTime = gameStartTime
-            };
 
             var activeWinningNumbers = Configuration.WinningNumbers.Take(Configuration.WinningNumberCount);
             var winningNumbersText = string.Join(", ", activeWinningNumbers.OrderBy(n => n));
@@ -575,7 +474,9 @@ public sealed class Plugin : IDalamudPlugin
             {
                 SendChatMessage($"[Spamroll] Game started! Winning numbers: {winningNumbersText}");
             }
-            SendChatMessage("[Spamroll] Players, type /random to participate!");
+            
+            // Schedule instruction message for 2 seconds from now
+            pendingInstructionTime = DateTime.Now.AddSeconds(2);
 
             if (Configuration.RollTimeout > 0)
             {
@@ -603,13 +504,10 @@ public sealed class Plugin : IDalamudPlugin
     
     public void ClearMessageQueue()
     {
-        lock (messageQueueLock)
-        {
-            messageTimer?.Dispose();
-            messageTimer = null;
-            messageQueue.Clear();
-            lastMessageSent = DateTime.MinValue;
-        }
+        var queuedCount = messageQueue.Count;
+        messageQueue.Clear();
+        lastMessageSent = DateTime.MinValue;
+        Log.Information($"Message queue cleared (had {queuedCount} pending messages)");
     }
 
     private void EndGame()
@@ -625,16 +523,8 @@ public sealed class Plugin : IDalamudPlugin
             gameCancellation?.Cancel();
             isGameActive = false;
             isGamePaused = false;
-            
-            if (currentGameStats != null)
-            {
-                currentGameStats.GameEndTime = DateTime.Now;
-            }
 
             var winnerCount = gameWinners.Count;
-            
-            // Save to history
-            SaveGameToHistory();
 
             if (Configuration.UseCustomTemplates)
             {
@@ -660,9 +550,6 @@ public sealed class Plugin : IDalamudPlugin
     public bool IsGameActive => isGameActive;
     public bool IsGamePaused => isGamePaused;
     public IReadOnlyList<Winner> GetCurrentWinners() => gameWinners;
-    public GameStats? GetCurrentGameStats() => currentGameStats;
-    public IReadOnlyList<RollData> GetAllRolls() => allRolls;
-    public int GetParticipantCount() => participants.Count;
     
     public void PauseGame()
     {
@@ -699,20 +586,47 @@ public sealed class Plugin : IDalamudPlugin
             return;
         }
         
-        SendChatMessage($"[Spamroll] Current winners ({gameWinners.Count}):");
+        // Queue the header message
+        QueueChatMessage($"[Spamroll] Current winners ({gameWinners.Count}):");
+        
+        // Queue each winner message with proper spacing
         foreach (var winner in gameWinners.OrderBy(w => w.WinTime))
         {
-            SendChatMessage($"  {winner.PlayerName} - {winner.RollValue}");
+            QueueChatMessage($"  {winner.PlayerName} - {winner.RollValue}");
         }
     }
     
-    public void ClearHistory()
-    {
-        Configuration.GameHistory.Clear();
-        Configuration.Save();
-    }
 
     private void DrawUI() => WindowSystem.Draw();
+    
+    private void OnFrameworkUpdate()
+    {
+        // Check if we have a pending instruction message to send
+        if (pendingInstructionTime.HasValue && DateTime.Now >= pendingInstructionTime.Value)
+        {
+            SendChatMessage("[Spamroll] Players, type /random to participate!");
+            pendingInstructionTime = null; // Clear the pending message
+        }
+        
+        // Process message queue with 2-second delays
+        if (messageQueue.Count > 0)
+        {
+            var timeSinceLastMessage = DateTime.Now - lastMessageSent;
+            if (timeSinceLastMessage.TotalMilliseconds >= 2000)
+            {
+                ProcessNextQueuedMessage();
+            }
+        }
+    }
+    
+    private void ProcessNextQueuedMessage()
+    {
+        if (messageQueue.Count == 0) return;
+        
+        var message = messageQueue.Dequeue();
+        SendChatMessageImmediate(message);
+        lastMessageSent = DateTime.Now;
+    }
 
     public void ToggleConfigUI() => ConfigWindow.Toggle();
     public void ToggleMainUI() => MainWindow.Toggle();

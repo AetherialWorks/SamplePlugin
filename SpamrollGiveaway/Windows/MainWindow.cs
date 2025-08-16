@@ -39,13 +39,6 @@ public class MainWindow : Window, IDisposable
         
         ImGui.Separator();
         
-        // Real-time stats
-        if (Plugin.Configuration.ShowGameStats)
-        {
-            DrawGameStats();
-            ImGui.Separator();
-        }
-
         // Show current winning numbers clearly
         DrawWinningNumbers();
         
@@ -53,13 +46,6 @@ public class MainWindow : Window, IDisposable
         
         // Enhanced winners display
         DrawWinnersSection();
-        
-        // Game history tab
-        if (Plugin.Configuration.SaveGameHistory)
-        {
-            ImGui.Separator();
-            DrawGameHistory();
-        }
     }
     
     private void DrawGameStatus()
@@ -75,16 +61,6 @@ public class MainWindow : Window, IDisposable
             {
                 ImGui.TextColored(new Vector4(0, 1, 0, 1), "Game Active");
                 
-                // Show elapsed time if enabled
-                if (Plugin.Configuration.ShowElapsedTime)
-                {
-                    var stats = Plugin.GetCurrentGameStats();
-                    if (stats != null)
-                    {
-                        ImGui.SameLine();
-                        ImGui.TextDisabled($"({stats.ElapsedTime:mm\\:ss})");
-                    }
-                }
             }
         }
         else
@@ -92,12 +68,6 @@ public class MainWindow : Window, IDisposable
             ImGui.TextColored(new Vector4(0.7f, 0.7f, 0.7f, 1), "Game Inactive");
         }
         
-        // Participant count
-        if (Plugin.Configuration.ShowParticipantCount && Plugin.IsGameActive)
-        {
-            ImGui.SameLine();
-            ImGui.TextDisabled($"| {Plugin.GetParticipantCount()} participants");
-        }
     }
     
     private void DrawQuickActions()
@@ -166,39 +136,6 @@ public class MainWindow : Window, IDisposable
             ImGui.SetTooltip("Clear pending chat messages and reset timer");
     }
     
-    private void DrawGameStats()
-    {
-        var stats = Plugin.GetCurrentGameStats();
-        if (stats == null) return;
-        
-        ImGui.Text("Game Statistics:");
-        ImGui.Indent();
-        
-        if (ImGui.BeginTable("StatsTable", 4, ImGuiTableFlags.SizingFixedFit))
-        {
-            ImGui.TableNextColumn();
-            ImGui.Text($"Participants: {stats.TotalParticipants}");
-            
-            ImGui.TableNextColumn();
-            ImGui.Text($"Total Rolls: {stats.TotalRolls}");
-            
-            ImGui.TableNextColumn();
-            if (stats.TotalRolls > 0)
-            {
-                ImGui.Text($"Range: {stats.MinRoll}-{stats.MaxRoll}");
-            }
-            
-            ImGui.TableNextColumn();
-            if (stats.TotalRolls > 0)
-            {
-                ImGui.Text($"Average: {stats.AverageRoll:F1}");
-            }
-            
-            ImGui.EndTable();
-        }
-        
-        ImGui.Unindent();
-    }
     
     private void DrawWinningNumbers()
     {
@@ -303,57 +240,4 @@ public class MainWindow : Window, IDisposable
         }
     }
     
-    private void DrawGameHistory()
-    {
-        if (ImGui.CollapsingHeader("Game History"))
-        {
-            if (Plugin.Configuration.GameHistory.Count == 0)
-            {
-                ImGui.TextDisabled("No games played yet");
-                return;
-            }
-            
-            if (ImGui.Button("Clear History"))
-            {
-                Plugin.ClearHistory();
-            }
-            
-            ImGui.Spacing();
-            
-            if (ImGui.BeginTable("HistoryTable", 5, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg | ImGuiTableFlags.ScrollY, new Vector2(0, 200)))
-            {
-                ImGui.TableSetupColumn("Date", ImGuiTableColumnFlags.WidthFixed, 120);
-                ImGui.TableSetupColumn("Duration", ImGuiTableColumnFlags.WidthFixed, 80);
-                ImGui.TableSetupColumn("Winners", ImGuiTableColumnFlags.WidthFixed, 60);
-                ImGui.TableSetupColumn("Participants", ImGuiTableColumnFlags.WidthFixed, 80);
-                ImGui.TableSetupColumn("Winning Numbers", ImGuiTableColumnFlags.WidthStretch);
-                ImGui.TableHeadersRow();
-
-                foreach (var entry in Plugin.Configuration.GameHistory)
-                {
-                    ImGui.TableNextRow();
-                    
-                    ImGui.TableNextColumn();
-                    ImGui.Text(entry.StartTime.ToString("MM/dd HH:mm"));
-                    
-                    ImGui.TableNextColumn();
-                    var duration = entry.EndTime.HasValue 
-                        ? entry.EndTime.Value - entry.StartTime 
-                        : TimeSpan.Zero;
-                    ImGui.Text(duration.ToString(@"mm\:ss"));
-                    
-                    ImGui.TableNextColumn();
-                    ImGui.Text(entry.Winners.Count.ToString());
-                    
-                    ImGui.TableNextColumn();
-                    ImGui.Text(entry.Stats.TotalParticipants.ToString());
-                    
-                    ImGui.TableNextColumn();
-                    ImGui.Text(string.Join(", ", entry.WinningNumbers));
-                }
-
-                ImGui.EndTable();
-            }
-        }
-    }
 }
