@@ -156,6 +156,14 @@ public class MainWindow : Window, IDisposable
                 Plugin.AnnounceWinners();
             }
         }
+        
+        ImGui.SameLine();
+        if (ImGui.Button("Clear Messages"))
+        {
+            Plugin.ClearMessageQueue();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Clear pending chat messages from queue");
     }
     
     private void DrawGameStats()
