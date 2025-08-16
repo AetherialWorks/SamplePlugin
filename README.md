@@ -1,76 +1,121 @@
-> ⚠️ **Don't click Fork!**
-> 
-> This is a GitHub Template repo. If you want to use this for a plugin, just [use this template][new-repo] to make a new repo!
->
-> ![image](https://github.com/goatcorp/SamplePlugin/assets/16760685/d9732094-e1ed-4769-a70b-58ed2b92580c)
+# Spamroll Giveaway Plugin
 
-# SpamrollGiveaway
+Run giveaways, Brain off!
 
-[![Use This Template badge](https://img.shields.io/badge/Use%20This%20Template-0?logo=github&labelColor=grey)][new-repo]
+Automates spamroll giveaway games in FFXIV by tracking rolls and determining winners automatically. No more manual counting or forgetting who won what numbers!
 
+## 🎯 What It Does
 
-SpamrollGiveaway plugin for Dalamud.
+- Automatically detects `/random` rolls during your giveaway games
+- Configurable winning numbers (default: 111, 222, 333, 444, 555, 666, 777, 888, 999)
+- Smart multiple winner support - one winner per winning number
+- Prevents duplicate winners across numbers (configurable)
+- Announces winners automatically to chat
+- Rate-limited chat messages to avoid FFXIV spam detection
+- Chat channel selection (Say, Party, Yell, Shout)
+- Custom announcement templates
 
-This is not designed to be the simplest possible example, but it is also not designed to cover everything you might want to do. For more detailed questions, come ask in [the Discord](https://discord.gg/holdshift).
+## 📥 Installation
 
-## Main Points
+1. Add this repository URL to your Dalamud plugin sources:
+   ```
+   https://raw.githubusercontent.com/kirin-xiv/SpamrollGiveaway-Release/main/repo.json
+   ```
 
-* Simple functional plugin
-  * Slash command
-  * Main UI
-  * Settings UI
-  * Image loading
-  * Plugin json
-* Simple, slightly-improved plugin configuration handling
-* Project organization
-  * Copies all necessary plugin files to the output directory
-    * Does not copy dependencies that are provided by dalamud
-    * Output directory can be zipped directly and have exactly what is required
-  * Hides data files from visual studio to reduce clutter
-    * Also allows having data files in different paths than VS would usually allow if done in the IDE directly
+2. Install "Spamroll Giveaway" from the plugin installer
 
+3. Type `/spamroll` to open the plugin window
 
-The intention is less that any of this is used directly in other projects, and more to show how similar things can be done.
+## ⚙️ Setup
 
-## How To Use
+### Configuration
+1. Open the plugin with `/spamroll config`
+2. Set your winning numbers (1-9 numbers supported)
+3. Choose your chat channel (Say, Party, Yell, Shout)
+4. Configure multiple winner settings
+5. Customize announcement templates (optional)
 
-### Getting Started
+### Game Presets
+- **Triple Numbers**: 111, 222, 333, 444, 555, 666, 777, 888, 999
+- **Quick Roll**: 1, 50, 100 (for faster games)
+- **Single Winner**: 777 only
+- Save your own custom presets
 
-To begin, [clone this template repository][new-repo] to your own GitHub account. This will automatically bring in everything you need to get a jumpstart on development. You do not need to fork this repository unless you intend to contribute modifications to it.
+## 🎮 How to Use
 
-Be sure to also check out the [Dalamud Developer Docs][dalamud-docs] for helpful information about building your own plugin. The Developer Docs includes helpful information about all sorts of things, including [how to submit][submit] your newly-created plugin to the official repository. Assuming you use this template repository, the provided project build configuration and license are already chosen to make everything a breeze.
+1. **Start a game**: Use `/spamstart` or click "Start Game" in the plugin window
+2. **Watch for rolls**: The plugin automatically detects winning rolls
+3. **Winners announced**: Winners are automatically announced to your chosen chat channel
+4. **Game ends**: Automatically or manually with `/spamstop`
 
-[new-repo]: https://github.com/new?template_name=SamplePlugin&template_owner=goatcorp
-[dalamud-docs]: https://dalamud.dev
-[submit]: https://dalamud.dev/plugin-development/plugin-submission
+### Example Flow
+```
+[Spamroll] Game started! Winning numbers: 111, 222, 333 - Type /random to participate!
+WINNER: PlayerName rolled 222!
+WINNER: AnotherPlayer rolled 111!
+[Spamroll] Game stopped. 2 winners.
+```
 
-### Prerequisites
+## 🔧 Commands
 
-SpamrollGiveaway assumes all the following prerequisites are met:
+- `/spamroll` - Open the main plugin window
+- `/spamroll config` - Open configuration directly  
+- `/spamstart` - Start collecting rolls
+- `/spamstop` - Stop the current game
+- `/spamconfig` - Open configuration window
 
-* XIVLauncher, FINAL FANTASY XIV, and Dalamud have all been installed and the game has been run with Dalamud at least once.
-* XIVLauncher is installed to its default directories and configurations.
-  * If a custom path is required for Dalamud's dev directory, it must be set with the `DALAMUD_HOME` environment variable.
-* A .NET Core 8 SDK has been installed and configured, or is otherwise available. (In most cases, the IDE will take care of this.)
+## 📋 Features
 
-### Building
+### Smart Winner Detection
+- Only processes configured winning numbers
+- First come, first served for each number
+- Optional: Same player can win multiple numbers
+- Automatic game completion when all numbers claimed
 
-1. Open up `SpamrollGiveaway.sln` in your C# editor of choice (likely [Visual Studio 2022](https://visualstudio.microsoft.com) or [JetBrains Rider](https://www.jetbrains.com/rider/)).
-2. Build the solution. By default, this will build a `Debug` build, but you can switch to `Release` in your IDE.
-3. The resulting plugin can be found at `SpamrollGiveaway/bin/x64/Debug/SpamrollGiveaway.dll` (or `Release` if appropriate.)
+### Rate-Limited Messaging
+- 2-second delays between chat messages
+- Prevents FFXIV chat spam detection
+- Queued announcements for multiple winners
+- "Clear Queue" button to cancel pending messages
 
-### Activating in-game
+### Flexible Configuration
+- 1-9 winning numbers supported
+- Multiple winner modes
+- Custom chat templates with placeholders
+- Game timeout settings
+- Sound notifications
 
-1. Launch the game and use `/xlsettings` in chat or `xlsettings` in the Dalamud Console to open up the Dalamud settings.
-    * In here, go to `Experimental`, and add the full path to the `SpamrollGiveaway.dll` to the list of Dev Plugin Locations.
-2. Next, use `/xlplugins` (chat) or `xlplugins` (console) to open up the Plugin Installer.
-    * In here, go to `Dev Tools > Installed Dev Plugins`, and the `SpamrollGiveaway` should be visible. Enable it.
-3. You should now be able to use `/pmycommand` (chat) or `pmycommand` (console)!
+### Chat Integration
+- Choose between Say, Party, Yell, Shout channels
+- Custom templates: `{player}`, `{roll}`, `{numbers}`, `{winnerCount}`
+- Automatic rate limiting prevents chat blocks
 
-Note that you only need to add it to the Dev Plugin Locations once (Step 1); it is preserved afterwards. You can disable, enable, or load your plugin on startup through the Plugin Installer.
+## 🛠️ Troubleshooting
 
-### Reconfiguring for your own uses
+**Plugin not detecting rolls?**
+- Make sure you're using `/random` (not `/random 1000`)
+- Check Debug Mode is off unless testing
+- Verify Local Player Name is set correctly
 
-Basically, just replace all references to `SpamrollGiveaway` in all of the files and filenames with your desired name, then start building the plugin of your dreams. You'll figure it out 😁
+**Messages getting rate limited?**
+- Plugin automatically spaces messages 2 seconds apart
+- Use "Clear Queue" if you need to cancel pending announcements
+- Switch to a less crowded chat channel if needed
 
-Dalamud will load the JSON file (by default, `SpamrollGiveaway/SpamrollGiveaway.json`) next to your DLL and use it for metadata, including the description for your plugin in the Plugin Installer. Make sure to update this with information relevant to _your_ plugin!
+**Game not starting?**
+- Make sure you have at least one winning number configured
+- Check that you're not already in an active game
+
+## 💡 Tips
+
+- Keep the plugin window open to monitor game progress
+- Use presets for quick game setup
+- Progress bar shows completion in multiple winner mode
+- Winner sorting options: Win Time, Roll Value, Player Name
+- Copy winner names with the "Copy" button next to each winner
+
+## 🎭 Perfect for FFXIV Events!
+
+This plugin was designed for FFXIV event organizers running giveaway games. It eliminates manual work and ensures fair, consistent games every time. The rate limiting system means your messages won't get blocked, and the flexible winning number system works for any type of giveaway!
+
+**Made with ❤️ by Kirin**

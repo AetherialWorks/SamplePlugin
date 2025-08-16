@@ -61,6 +61,10 @@ public class ConfigWindow : Window, IDisposable
             
             ImGui.EndTabBar();
         }
+        
+        // Footer for all tabs
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(1.0f, 0.75f, 0.8f, 1f), "Made with <3 by Kirin");
     }
     
     private void DrawGameSettings()

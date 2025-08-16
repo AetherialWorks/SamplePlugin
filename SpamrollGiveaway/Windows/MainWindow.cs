@@ -238,6 +238,10 @@ public class MainWindow : Window, IDisposable
         {
             ImGui.TextDisabled("Start a game to see winners");
         }
+        
+        // Footer
+        ImGui.Separator();
+        ImGui.TextColored(new Vector4(1.0f, 0.75f, 0.8f, 1f), "Made with <3 by Kirin");
     }
     
 }
