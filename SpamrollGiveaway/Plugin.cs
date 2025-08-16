@@ -73,7 +73,10 @@ public sealed class Plugin : IDalamudPlugin
     private GameStats? currentGameStats;
     private DateTime gameStartTime;
     
-    // Simple message delay tracking
+    // Message queue with timer-based sending
+    private readonly Queue<string> messageQueue = new();
+    private readonly object messageQueueLock = new object();
+    private System.Threading.Timer? messageTimer;
     private DateTime lastMessageSent = DateTime.MinValue;
     private const int MessageDelayMs = 2000;
 
@@ -125,8 +128,14 @@ public sealed class Plugin : IDalamudPlugin
         gameCancellation?.Cancel();
         gameCancellation?.Dispose();
         
-        // Reset message timing on disposal
-        lastMessageSent = DateTime.MinValue;
+        // Clean up message queue and timer
+        lock (messageQueueLock)
+        {
+            messageTimer?.Dispose();
+            messageTimer = null;
+            messageQueue.Clear();
+            lastMessageSent = DateTime.MinValue;
+        }
 
         WindowSystem.RemoveAllWindows();
 
@@ -417,18 +426,51 @@ public sealed class Plugin : IDalamudPlugin
     
     private void SendChatMessage(string message)
     {
-        // Simple rate limiting - check if enough time has passed since last message
-        var timeSinceLastMessage = DateTime.Now - lastMessageSent;
-        if (timeSinceLastMessage.TotalMilliseconds < MessageDelayMs)
+        lock (messageQueueLock)
         {
-            // Don't send if too soon, just skip it
-            Log.Information($"Message rate limited, skipping: {message}");
-            return;
+            messageQueue.Enqueue(message);
+            
+            // If this is the first message or enough time has passed, send immediately
+            var timeSinceLastMessage = DateTime.Now - lastMessageSent;
+            if (timeSinceLastMessage.TotalMilliseconds >= MessageDelayMs)
+            {
+                ProcessNextMessage();
+            }
+            else if (messageTimer == null)
+            {
+                // Start timer to process messages
+                var delayNeeded = MessageDelayMs - (int)timeSinceLastMessage.TotalMilliseconds;
+                messageTimer = new System.Threading.Timer(OnMessageTimer, null, delayNeeded, Timeout.Infinite);
+            }
         }
+    }
+    
+    private void OnMessageTimer(object? state)
+    {
+        lock (messageQueueLock)
+        {
+            messageTimer?.Dispose();
+            messageTimer = null;
+            
+            ProcessNextMessage();
+            
+            // If there are more messages, schedule the next one
+            if (messageQueue.Count > 0)
+            {
+                messageTimer = new System.Threading.Timer(OnMessageTimer, null, MessageDelayMs, Timeout.Infinite);
+            }
+        }
+    }
+    
+    private void ProcessNextMessage()
+    {
+        if (messageQueue.Count == 0) return;
+        
+        var messageToSend = messageQueue.Dequeue();
         
         try
         {
-            var command = GetChatCommand(Configuration.AnnouncementChannel) + message;
+            var command = GetChatCommand(Configuration.AnnouncementChannel) + messageToSend;
             Chat.SendMessage(command);
             lastMessageSent = DateTime.Now;
         }
@@ -559,9 +601,15 @@ public sealed class Plugin : IDalamudPlugin
         EndGame();
     }
     
-    public void ResetMessageTimer()
+    public void ClearMessageQueue()
     {
-        lastMessageSent = DateTime.MinValue;
+        lock (messageQueueLock)
+        {
+            messageTimer?.Dispose();
+            messageTimer = null;
+            messageQueue.Clear();
+            lastMessageSent = DateTime.MinValue;
+        }
     }
 
     private void EndGame()

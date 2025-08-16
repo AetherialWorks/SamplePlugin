@@ -158,12 +158,12 @@ public class MainWindow : Window, IDisposable
         }
         
         ImGui.SameLine();
-        if (ImGui.Button("Reset Timer"))
+        if (ImGui.Button("Clear Queue"))
         {
-            Plugin.ResetMessageTimer();
+            Plugin.ClearMessageQueue();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Reset message timer to allow immediate sending");
+            ImGui.SetTooltip("Clear pending chat messages and reset timer");
     }
     
     private void DrawGameStats()
