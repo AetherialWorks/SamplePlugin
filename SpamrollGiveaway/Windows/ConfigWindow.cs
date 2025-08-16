@@ -1,7 +1,7 @@
 ﻿using System;
 using System.Numerics;
 using Dalamud.Interface.Windowing;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using System.Linq;
 
 namespace SpamrollGiveaway.Windows;
@@ -11,9 +11,8 @@ public class ConfigWindow : Window, IDisposable
     private Configuration Configuration;
     private Plugin Plugin;
 
-    public ConfigWindow(Plugin plugin) : base("Spamroll Giveaway Configuration###SpamrollConfig")
+    public ConfigWindow(Plugin plugin) : base("Spamroll Giveaway Configuration###SpamrollConfig", ImGuiWindowFlags.NoCollapse)
     {
-        Flags = ImGuiWindowFlags.NoCollapse;
         Size = new Vector2(400, 300);
         SizeCondition = ImGuiCond.FirstUseEver;
 
@@ -108,6 +107,30 @@ public class ConfigWindow : Window, IDisposable
             Configuration.Save();
         }
 
+        var allowMultiple = Configuration.AllowMultipleWinners;
+        if (ImGui.Checkbox("Allow multiple winners (one per winning number)", ref allowMultiple))
+        {
+            Configuration.AllowMultipleWinners = allowMultiple;
+            Configuration.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("When enabled, each winning number can have its own winner\n(e.g., one winner for 111, one for 222, etc.)");
+
+        // Only show this option if multiple winners is enabled
+        if (Configuration.AllowMultipleWinners)
+        {
+            ImGui.Indent();
+            var allowSamePlayer = Configuration.AllowSamePlayerMultipleWins;
+            if (ImGui.Checkbox("Allow same player to win multiple numbers", ref allowSamePlayer))
+            {
+                Configuration.AllowSamePlayerMultipleWins = allowSamePlayer;
+                Configuration.Save();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("When enabled, the same player can win multiple winning numbers\n(e.g., Alice can win both 111 and 222)");
+            ImGui.Unindent();
+        }
+
         // Step 3: Add sound settings
         ImGui.Spacing();
         ImGui.Separator();
@@ -123,24 +146,51 @@ public class ConfigWindow : Window, IDisposable
 
         if (Configuration.EnableWinnerSound)
         {
-            // Windows system sound selection
-            var soundEffects = new string[]
+            // Sound type selection
+            var soundTypes = new string[] { "Windows System Sound", "FFXIV In-Game Sound" };
+            var selectedType = (int)Configuration.SoundType;
+            if (ImGui.Combo("Sound Type", ref selectedType, soundTypes, soundTypes.Length))
             {
-                "Sound 1 - Exclamation",
-                "Sound 2 - Default Beep",
-                "Sound 3 - Asterisk (Info)",
-                "Sound 4 - Question",
-                "Sound 5 - Stop/Error"
-            };
-
-            var selectedSound = Configuration.SelectedSoundEffect - 1; // Convert to 0-based index
-            if (selectedSound < 0 || selectedSound >= soundEffects.Length)
-                selectedSound = 0; // Default to first sound (Exclamation)
-
-            if (ImGui.Combo("Winner Sound Effect", ref selectedSound, soundEffects, soundEffects.Length))
-            {
-                Configuration.SelectedSoundEffect = selectedSound + 1; // Convert back to 1-based
+                Configuration.SoundType = (SoundEffectType)selectedType;
                 Configuration.Save();
+            }
+
+            // Sound effect selection based on type
+            if (Configuration.SoundType == SoundEffectType.WindowsSystemSound)
+            {
+                var soundEffects = new string[]
+                {
+                    "Sound 1 - Exclamation",
+                    "Sound 2 - Default Beep", 
+                    "Sound 3 - Asterisk (Info)",
+                    "Sound 4 - Question",
+                    "Sound 5 - Stop/Error"
+                };
+
+                var selectedSound = Configuration.SelectedSoundEffect - 1; // Convert to 0-based index
+                if (selectedSound < 0 || selectedSound >= soundEffects.Length)
+                    selectedSound = 0; // Default to first sound (Exclamation)
+
+                if (ImGui.Combo("Winner Sound Effect", ref selectedSound, soundEffects, soundEffects.Length))
+                {
+                    Configuration.SelectedSoundEffect = selectedSound + 1; // Convert back to 1-based
+                    Configuration.Save();
+                }
+            }
+            else
+            {
+                // FFXIV sound effects (se.1 through se.16)
+                var gameEffects = Enumerable.Range(1, 16).Select(i => $"<se.{i}>").ToArray();
+                
+                var selectedEffect = Configuration.SelectedSoundEffect - 1; // Convert to 0-based index
+                if (selectedEffect < 0 || selectedEffect >= gameEffects.Length)
+                    selectedEffect = 0; // Default to se.1
+
+                if (ImGui.Combo("Winner Sound Effect", ref selectedEffect, gameEffects, gameEffects.Length))
+                {
+                    Configuration.SelectedSoundEffect = selectedEffect + 1; // Convert back to 1-based
+                    Configuration.Save();
+                }
             }
 
             // Test sound button

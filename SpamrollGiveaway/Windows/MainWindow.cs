@@ -3,7 +3,7 @@ using System.Numerics;
 using Dalamud.Interface.Utility;
 using Dalamud.Interface.Utility.Raii;
 using Dalamud.Interface.Windowing;
-using ImGuiNET;
+using Dalamud.Bindings.ImGui;
 using System.Linq;
 using FFXIVSharedLibrary.Chat;
 
@@ -63,29 +63,53 @@ public class MainWindow : Window, IDisposable
 
         ImGui.Spacing();
 
-        // Only show winners (remove the full roll table)
+        // Show winners
         var gameWinners = Plugin.GetCurrentWinners();
         if (gameWinners.Count > 0)
         {
-            ImGui.Text("Winners This Round:");
+            var headerText = Plugin.Configuration.AllowMultipleWinners 
+                ? $"Winners This Round ({gameWinners.Count} of {Plugin.Configuration.WinningNumberCount}):"
+                : "Winners This Round:";
+            ImGui.Text(headerText);
             ImGui.Spacing();
 
-            if (ImGui.BeginTable("WinnersTable", 2, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
+            if (ImGui.BeginTable("WinnersTable", 3, ImGuiTableFlags.Borders | ImGuiTableFlags.RowBg))
             {
                 ImGui.TableSetupColumn("Player", ImGuiTableColumnFlags.WidthStretch);
                 ImGui.TableSetupColumn("Winning Roll", ImGuiTableColumnFlags.WidthFixed, 100);
+                ImGui.TableSetupColumn("Win Time", ImGuiTableColumnFlags.WidthFixed, 120);
                 ImGui.TableHeadersRow();
 
-                foreach (var winner in gameWinners)
+                foreach (var winner in gameWinners.OrderBy(w => w.WinTime))
                 {
                     ImGui.TableNextRow();
                     ImGui.TableNextColumn();
                     ImGui.Text(winner.PlayerName);
                     ImGui.TableNextColumn();
                     ImGui.TextColored(new Vector4(0, 1, 0, 1), winner.RollValue.ToString());
+                    ImGui.TableNextColumn();
+                    ImGui.TextDisabled(winner.WinTime.ToString("HH:mm:ss"));
                 }
 
                 ImGui.EndTable();
+            }
+
+            // Show progress for multiple winners mode
+            if (Plugin.Configuration.AllowMultipleWinners && Plugin.IsGameActive)
+            {
+                ImGui.Spacing();
+                var activeNumbers = Plugin.Configuration.WinningNumbers.Take(Plugin.Configuration.WinningNumberCount);
+                var claimedNumbers = gameWinners.Select(w => w.RollValue).ToHashSet();
+                var remainingNumbers = activeNumbers.Where(n => !claimedNumbers.Contains(n));
+                
+                if (remainingNumbers.Any())
+                {
+                    ImGui.TextColored(new Vector4(1, 1, 0, 1), $"Still needed: {string.Join(", ", remainingNumbers)}");
+                }
+                else
+                {
+                    ImGui.TextColored(new Vector4(0, 1, 0, 1), "All winning numbers claimed!");
+                }
             }
         }
         else if (Plugin.IsGameActive)

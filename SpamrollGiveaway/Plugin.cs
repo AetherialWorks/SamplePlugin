@@ -14,6 +14,8 @@ using System.Threading.Tasks;
 using System;
 using System.Text.RegularExpressions;
 using System.Runtime.InteropServices;
+using ECommons;
+using ECommons.Automation;
 
 namespace SpamrollGiveaway;
 
@@ -61,6 +63,9 @@ public sealed class Plugin : IDalamudPlugin
 
     public Plugin()
     {
+        // Initialize ECommons
+        ECommonsMain.Init(PluginInterface, this);
+        
         Configuration = PluginInterface.GetPluginConfig() as Configuration ?? new Configuration();
         Configuration.Initialize(PluginInterface);
 
@@ -117,6 +122,9 @@ public sealed class Plugin : IDalamudPlugin
         PluginInterface.UiBuilder.Draw -= DrawUI;
         PluginInterface.UiBuilder.OpenConfigUi -= ToggleConfigUI;
         PluginInterface.UiBuilder.OpenMainUi -= ToggleMainUI;
+        
+        // Dispose ECommons
+        ECommonsMain.Dispose();
     }
 
     private void OnCommand(string command, string args)
@@ -200,10 +208,37 @@ public sealed class Plugin : IDalamudPlugin
 
         lock (lockObject)
         {
-            // Check if this player already won this round
-            if (gameWinners.Any(w => w.PlayerName == normalizedName))
+            bool canWin = false;
+            
+            if (Configuration.AllowMultipleWinners)
             {
-                return; // Player already won, ignore additional winning rolls
+                // Multiple winners mode: Check if this specific number already has a winner
+                canWin = !gameWinners.Any(w => w.RollValue == rollValue);
+                
+                // Check if this player already won a different number (only if not allowing same player multiple wins)
+                if (canWin && !Configuration.AllowSamePlayerMultipleWins && gameWinners.Any(w => w.PlayerName == normalizedName))
+                {
+                    Log.Information($"[Debug] Player {normalizedName} already won with a different number, ignoring");
+                    return;
+                }
+            }
+            else
+            {
+                // Single winner mode: Check if anyone has won yet
+                canWin = gameWinners.Count == 0;
+            }
+
+            if (!canWin)
+            {
+                if (Configuration.AllowMultipleWinners)
+                {
+                    Log.Information($"[Debug] Number {rollValue} already has a winner, ignoring");
+                }
+                else
+                {
+                    Log.Information($"[Debug] Game already has a winner, ignoring");
+                }
+                return;
             }
 
             // This is a winner! Record it
@@ -228,10 +263,21 @@ public sealed class Plugin : IDalamudPlugin
             var debugInfo = isDebugRoll ? " [DEBUG]" : "";
             ChatGui.Print($"🎉 WINNER: {normalizedName} rolled {rollValue}!{debugInfo}");
 
-            // Auto-close if configured
-            if (Configuration.AutoCloseAfterFirstWinner && gameWinners.Count == 1)
+            // Auto-close logic
+            if (Configuration.AutoCloseAfterFirstWinner && !Configuration.AllowMultipleWinners && gameWinners.Count == 1)
             {
                 EndGame();
+            }
+            else if (Configuration.AllowMultipleWinners)
+            {
+                // Check if all winning numbers have been claimed
+                var allWinningNumbers = Configuration.WinningNumbers.Take(Configuration.WinningNumberCount);
+                var claimedNumbers = gameWinners.Select(w => w.RollValue).ToHashSet();
+                if (allWinningNumbers.All(num => claimedNumbers.Contains(num)))
+                {
+                    ChatGui.Print("[Spamroll] All winning numbers have been claimed! Game complete.");
+                    EndGame();
+                }
             }
         }
     }
@@ -269,20 +315,37 @@ public sealed class Plugin : IDalamudPlugin
     {
         try
         {
-            // Play Windows system sound based on the selected sound effect
-            // MessageBeep sound types: 0 = default, 0x10 = stop, 0x20 = question, 0x30 = exclamation, 0x40 = asterisk
-            uint soundType = soundEffect switch
+            if (Configuration.SoundType == SoundEffectType.GameSoundEffect)
             {
-                1 => 0x30, // Exclamation
-                2 => 0x00, // Default beep
-                3 => 0x40, // Asterisk (informational)
-                4 => 0x20, // Question
-                5 => 0x10, // Stop/Error
-                _ => 0x30  // Default to exclamation
-            };
-            
-            MessageBeep(soundType);
-            Log.Information($"Playing Windows system sound {soundEffect} (type: 0x{soundType:X})");
+                // Play FFXIV in-game sound effect using ECommons Chat.SendMessage
+                try 
+                {
+                    var command = $"/echo <se.{soundEffect}>";
+                    Chat.SendMessage(command);
+                    Log.Information($"Playing FFXIV in-game sound effect: {command}");
+                }
+                catch (Exception ex)
+                {
+                    Log.Warning($"Failed to send sound effect command: {ex.Message}");
+                }
+            }
+            else
+            {
+                // Play Windows system sound based on the selected sound effect
+                // MessageBeep sound types: 0 = default, 0x10 = stop, 0x20 = question, 0x30 = exclamation, 0x40 = asterisk
+                uint soundType = soundEffect switch
+                {
+                    1 => 0x30, // Exclamation
+                    2 => 0x00, // Default beep
+                    3 => 0x40, // Asterisk (informational)
+                    4 => 0x20, // Question
+                    5 => 0x10, // Stop/Error
+                    _ => 0x30  // Default to exclamation
+                };
+                
+                MessageBeep(soundType);
+                Log.Information($"Playing Windows system sound {soundEffect} (type: 0x{soundType:X})");
+            }
         }
         catch (Exception ex)
         {
@@ -294,6 +357,7 @@ public sealed class Plugin : IDalamudPlugin
     {
         PlayWinnerSound(soundEffect);
     }
+
 
     private void OnRollDetected(RollEventArgs rollArgs)
     {
@@ -336,11 +400,11 @@ public sealed class Plugin : IDalamudPlugin
 
             if (Configuration.RollTimeout > 0)
             {
-                _ = Task.Run(async () =>
+                _ = System.Threading.Tasks.Task.Run(async () =>
                 {
                     try
                     {
-                        await Task.Delay(Configuration.RollTimeout * 1000, gameCancellation.Token);
+                        await System.Threading.Tasks.Task.Delay(Configuration.RollTimeout * 1000, gameCancellation.Token);
                         if (isGameActive && gameWinners.Count == 0)
                         {
                             ChatGui.Print("[Spamroll] Time's up! No winners this round.");
@@ -373,7 +437,19 @@ public sealed class Plugin : IDalamudPlugin
 
             var winnerCount = gameWinners.Count;
 
-            ChatGui.Print($"[Spamroll] Game stopped. {winnerCount} winners.");
+            if (Configuration.AllowMultipleWinners && winnerCount > 0)
+            {
+                // Show detailed results for multiple winners
+                ChatGui.Print($"[Spamroll] Game stopped. {winnerCount} winners:");
+                foreach (var winner in gameWinners.OrderBy(w => w.RollValue))
+                {
+                    ChatGui.Print($"  🎉 {winner.PlayerName} won {winner.RollValue}");
+                }
+            }
+            else
+            {
+                ChatGui.Print($"[Spamroll] Game stopped. {winnerCount} winners.");
+            }
         }
     }
 
