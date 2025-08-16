@@ -73,10 +73,7 @@ public sealed class Plugin : IDalamudPlugin
     private GameStats? currentGameStats;
     private DateTime gameStartTime;
     
-    // Message queue for delayed sending
-    private readonly Queue<string> messageQueue = new();
-    private readonly object messageQueueLock = new object();
-    private bool isProcessingMessages = false;
+    // Simple message delay tracking
     private DateTime lastMessageSent = DateTime.MinValue;
     private const int MessageDelayMs = 2000;
 
@@ -128,12 +125,8 @@ public sealed class Plugin : IDalamudPlugin
         gameCancellation?.Cancel();
         gameCancellation?.Dispose();
         
-        // Clear message queue
-        lock (messageQueueLock)
-        {
-            messageQueue.Clear();
-            isProcessingMessages = false;
-        }
+        // Reset message timing on disposal
+        lastMessageSent = DateTime.MinValue;
 
         WindowSystem.RemoveAllWindows();
 
@@ -424,54 +417,24 @@ public sealed class Plugin : IDalamudPlugin
     
     private void SendChatMessage(string message)
     {
-        lock (messageQueueLock)
+        // Simple rate limiting - check if enough time has passed since last message
+        var timeSinceLastMessage = DateTime.Now - lastMessageSent;
+        if (timeSinceLastMessage.TotalMilliseconds < MessageDelayMs)
         {
-            messageQueue.Enqueue(message);
-            
-            if (!isProcessingMessages)
-            {
-                isProcessingMessages = true;
-                _ = Task.Run(ProcessMessageQueue);
-            }
+            // Don't send if too soon, just skip it
+            Log.Information($"Message rate limited, skipping: {message}");
+            return;
         }
-    }
-    
-    private async Task ProcessMessageQueue()
-    {
-        while (true)
+        
+        try
         {
-            string? messageToSend = null;
-            
-            lock (messageQueueLock)
-            {
-                if (messageQueue.Count == 0)
-                {
-                    isProcessingMessages = false;
-                    return;
-                }
-                
-                messageToSend = messageQueue.Dequeue();
-            }
-            
-            // Ensure we wait at least 2 seconds between messages
-            var timeSinceLastMessage = DateTime.Now - lastMessageSent;
-            if (timeSinceLastMessage.TotalMilliseconds < MessageDelayMs)
-            {
-                var delayNeeded = MessageDelayMs - (int)timeSinceLastMessage.TotalMilliseconds;
-                await Task.Delay(delayNeeded);
-            }
-            
-            // Send the message
-            try
-            {
-                var command = GetChatCommand(Configuration.AnnouncementChannel) + messageToSend;
-                Chat.SendMessage(command);
-                lastMessageSent = DateTime.Now;
-            }
-            catch (Exception ex)
-            {
-                Log.Warning($"Failed to send chat message: {ex.Message}");
-            }
+            var command = GetChatCommand(Configuration.AnnouncementChannel) + message;
+            Chat.SendMessage(command);
+            lastMessageSent = DateTime.Now;
+        }
+        catch (Exception ex)
+        {
+            Log.Warning($"Failed to send chat message: {ex.Message}");
         }
     }
     
@@ -596,12 +559,9 @@ public sealed class Plugin : IDalamudPlugin
         EndGame();
     }
     
-    public void ClearMessageQueue()
+    public void ResetMessageTimer()
     {
-        lock (messageQueueLock)
-        {
-            messageQueue.Clear();
-        }
+        lastMessageSent = DateTime.MinValue;
     }
 
     private void EndGame()
