@@ -294,11 +294,11 @@ public sealed class Plugin : IDalamudPlugin
                 var announcement = Configuration.WinnerAnnouncementTemplate
                     .Replace("{player}", normalizedName)
                     .Replace("{roll}", rollValue.ToString());
-                ChatGui.Print($"{announcement}{debugInfo}");
+                SendChatMessage($"{announcement}{debugInfo}");
             }
             else
             {
-                ChatGui.Print($"WINNER: {normalizedName} rolled {rollValue}!{debugInfo}");
+                SendChatMessage($"WINNER: {normalizedName} rolled {rollValue}!{debugInfo}");
             }
 
             // Auto-close logic
@@ -313,7 +313,7 @@ public sealed class Plugin : IDalamudPlugin
                 var claimedNumbers = gameWinners.Select(w => w.RollValue).ToHashSet();
                 if (allWinningNumbers.All(num => claimedNumbers.Contains(num)))
                 {
-                    ChatGui.Print("[Spamroll] All winning numbers have been claimed! Game complete.");
+                    SendChatMessage("[Spamroll] All winning numbers have been claimed! Game complete.");
                     EndGame();
                 }
             }
@@ -394,6 +394,24 @@ public sealed class Plugin : IDalamudPlugin
     public void PlayTestSound(int soundEffect)
     {
         PlayWinnerSound(soundEffect);
+    }
+    
+    private string GetChatCommand(ChatChannel channel)
+    {
+        return channel switch
+        {
+            ChatChannel.Say => "/say ",
+            ChatChannel.Party => "/party ",
+            ChatChannel.Yell => "/yell ",
+            ChatChannel.Shout => "/shout ",
+            _ => "/say "
+        };
+    }
+    
+    private void SendChatMessage(string message)
+    {
+        var command = GetChatCommand(Configuration.AnnouncementChannel) + message;
+        Chat.SendMessage(command);
     }
     
     private void UpdateGameStats()
@@ -485,13 +503,13 @@ public sealed class Plugin : IDalamudPlugin
             if (Configuration.UseCustomTemplates)
             {
                 var startMessage = Configuration.GameStartTemplate.Replace("{numbers}", winningNumbersText);
-                ChatGui.Print(startMessage);
+                SendChatMessage(startMessage);
             }
             else
             {
-                ChatGui.Print($"[Spamroll] Game started! Winning numbers: {winningNumbersText}");
+                SendChatMessage($"[Spamroll] Game started! Winning numbers: {winningNumbersText}");
             }
-            ChatGui.Print("[Spamroll] Players, type /random to participate!");
+            SendChatMessage("[Spamroll] Players, type /random to participate!");
 
             if (Configuration.RollTimeout > 0)
             {
@@ -502,7 +520,7 @@ public sealed class Plugin : IDalamudPlugin
                         await System.Threading.Tasks.Task.Delay(Configuration.RollTimeout * 1000, gameCancellation.Token);
                         if (isGameActive && gameWinners.Count == 0)
                         {
-                            ChatGui.Print("[Spamroll] Time's up! No winners this round.");
+                            SendChatMessage("[Spamroll] Time's up! No winners this round.");
                             EndGame();
                         }
                     }
@@ -544,20 +562,20 @@ public sealed class Plugin : IDalamudPlugin
             if (Configuration.UseCustomTemplates)
             {
                 var endMessage = Configuration.GameEndTemplate.Replace("{winnerCount}", winnerCount.ToString());
-                ChatGui.Print(endMessage);
+                SendChatMessage(endMessage);
             }
             else if (Configuration.AllowMultipleWinners && winnerCount > 0)
             {
                 // Show detailed results for multiple winners
-                ChatGui.Print($"[Spamroll] Game stopped. {winnerCount} winners:");
+                SendChatMessage($"[Spamroll] Game stopped. {winnerCount} winners:");
                 foreach (var winner in gameWinners.OrderBy(w => w.RollValue))
                 {
-                    ChatGui.Print($"  {winner.PlayerName} won {winner.RollValue}");
+                    SendChatMessage($"  {winner.PlayerName} won {winner.RollValue}");
                 }
             }
             else
             {
-                ChatGui.Print($"[Spamroll] Game stopped. {winnerCount} winners.");
+                SendChatMessage($"[Spamroll] Game stopped. {winnerCount} winners.");
             }
         }
     }
@@ -574,7 +592,7 @@ public sealed class Plugin : IDalamudPlugin
         if (isGameActive && !isGamePaused)
         {
             isGamePaused = true;
-            ChatGui.Print("[Spamroll] Game paused.");
+            SendChatMessage("[Spamroll] Game paused.");
         }
     }
     
@@ -583,7 +601,7 @@ public sealed class Plugin : IDalamudPlugin
         if (isGameActive && isGamePaused)
         {
             isGamePaused = false;
-            ChatGui.Print("[Spamroll] Game resumed.");
+            SendChatMessage("[Spamroll] Game resumed.");
         }
     }
     
@@ -600,14 +618,14 @@ public sealed class Plugin : IDalamudPlugin
     {
         if (gameWinners.Count == 0)
         {
-            ChatGui.Print("[Spamroll] No winners to announce.");
+            SendChatMessage("[Spamroll] No winners to announce.");
             return;
         }
         
-        ChatGui.Print($"[Spamroll] Current winners ({gameWinners.Count}):");
+        SendChatMessage($"[Spamroll] Current winners ({gameWinners.Count}):");
         foreach (var winner in gameWinners.OrderBy(w => w.WinTime))
         {
-            ChatGui.Print($"  {winner.PlayerName} - {winner.RollValue}");
+            SendChatMessage($"  {winner.PlayerName} - {winner.RollValue}");
         }
     }
     

@@ -11,6 +11,14 @@ public enum SoundEffectType
     GameSoundEffect = 1
 }
 
+public enum ChatChannel
+{
+    Say = 0,
+    Party = 1,
+    Yell = 2,
+    Shout = 3
+}
+
 public enum WinnerSortOrder
 {
     WinTime = 0,
@@ -94,6 +102,7 @@ public class Configuration : IPluginConfiguration
     public List<GamePreset> GamePresets { get; set; } = new();
     
     // Chat Integration
+    public ChatChannel AnnouncementChannel { get; set; } = ChatChannel.Say;
     public string WinnerAnnouncementTemplate { get; set; } = "WINNER: {player} rolled {roll}!";
     public string GameStartTemplate { get; set; } = "[Spamroll] Game started! Winning numbers: {numbers}";
     public string GameEndTemplate { get; set; } = "[Spamroll] Game ended! {winnerCount} winners.";

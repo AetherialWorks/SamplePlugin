@@ -368,6 +368,19 @@ public class ConfigWindow : Window, IDisposable
         ImGui.Text("Chat Message Templates:");
         ImGui.Separator();
         
+        // Chat channel selection
+        ImGui.Text("Announcement Channel:");
+        var chatChannel = (int)Configuration.AnnouncementChannel;
+        if (ImGui.Combo("##ChatChannel", ref chatChannel, "Say\0Party\0Yell\0Shout\0"))
+        {
+            Configuration.AnnouncementChannel = (ChatChannel)chatChannel;
+            Configuration.Save();
+        }
+        if (ImGui.IsItemHovered())
+            ImGui.SetTooltip("Chat channel for all game announcements");
+        
+        ImGui.Spacing();
+        
         var useCustomTemplates = Configuration.UseCustomTemplates;
         if (ImGui.Checkbox("Use Custom Templates", ref useCustomTemplates))
         {

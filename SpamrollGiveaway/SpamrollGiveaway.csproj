@@ -27,3 +27,4 @@
     <ProjectReference Include="..\extern\FFXIVToolkit\FFXIVSharedLibrary\FFXIVSharedLibrary\FFXIVSharedLibrary.csproj" />
   </ItemGroup>
 </Project>
+
