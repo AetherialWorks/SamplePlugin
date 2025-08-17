@@ -297,18 +297,39 @@ public class ConfigWindow : Window, IDisposable
         ImGui.Text("Chat Message Templates:");
         ImGui.Separator();
         
-        // Chat channel selection
-        ImGui.Text("Announcement Channel:");
-        var chatChannel = (int)Configuration.AnnouncementChannel;
-        if (ImGui.Combo("##ChatChannel", ref chatChannel, "Say\0Party\0Yell\0Shout\0"))
+        // Manual mode checkbox
+        var manualMode = Configuration.ManualMode;
+        if (ImGui.Checkbox("Manual Mode", ref manualMode))
         {
-            Configuration.AnnouncementChannel = (ChatChannel)chatChannel;
+            Configuration.ManualMode = manualMode;
             Configuration.Save();
         }
         if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Chat channel for all game announcements");
+            ImGui.SetTooltip("Disables automatic chat messages. Use copy/paste buttons instead.\nMakes plugin more resilient to game updates.");
         
         ImGui.Spacing();
+        
+        // Only show chat channel if not in manual mode
+        if (!Configuration.ManualMode)
+        {
+            ImGui.Text("Announcement Channel:");
+            var chatChannel = (int)Configuration.AnnouncementChannel;
+            if (ImGui.Combo("##ChatChannel", ref chatChannel, "Say\0Party\0Yell\0Shout\0Echo\0"))
+            {
+                Configuration.AnnouncementChannel = (ChatChannel)chatChannel;
+                Configuration.Save();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Chat channel for all game announcements");
+            
+            ImGui.Spacing();
+        }
+        else
+        {
+            ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), "Manual Mode: Chat automation disabled");
+            ImGui.TextWrapped("Game messages will not be sent automatically. Use the copy/paste buttons in the main window.");
+            ImGui.Spacing();
+        }
         
         var useCustomTemplates = Configuration.UseCustomTemplates;
         if (ImGui.Checkbox("Use Custom Templates", ref useCustomTemplates))

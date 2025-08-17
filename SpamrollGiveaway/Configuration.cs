@@ -16,7 +16,8 @@ public enum ChatChannel
     Say = 0,
     Party = 1,
     Yell = 2,
-    Shout = 3
+    Shout = 3,
+    Echo = 4
 }
 
 public enum WinnerSortOrder
@@ -80,6 +81,7 @@ public class Configuration : IPluginConfiguration
     public string GameStartTemplate { get; set; } = "[Spamroll] Game started! Winning numbers: {numbers}";
     public string GameEndTemplate { get; set; } = "[Spamroll] Game ended! {winnerCount} winners.";
     public bool UseCustomTemplates { get; set; } = false;
+    public bool ManualMode { get; set; } = false;
 
     [NonSerialized]
     private IDalamudPluginInterface? pluginInterface;

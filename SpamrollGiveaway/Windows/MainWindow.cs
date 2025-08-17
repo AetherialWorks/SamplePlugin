@@ -39,6 +39,13 @@ public class MainWindow : Window, IDisposable
         
         ImGui.Separator();
         
+        // Manual mode section
+        if (Plugin.Configuration.ManualMode)
+        {
+            DrawManualModeSection();
+            ImGui.Separator();
+        }
+        
         // Show current winning numbers clearly
         DrawWinningNumbers();
         
@@ -117,8 +124,8 @@ public class MainWindow : Window, IDisposable
             Plugin.ToggleConfigUI();
         }
         
-        // Additional quick actions
-        if (Plugin.GetCurrentWinners().Count > 0)
+        // Additional quick actions (only show if not in manual mode)
+        if (!Plugin.Configuration.ManualMode && Plugin.GetCurrentWinners().Count > 0)
         {
             ImGui.SameLine();
             if (ImGui.Button("Announce Winners"))
@@ -127,15 +134,87 @@ public class MainWindow : Window, IDisposable
             }
         }
         
-        ImGui.SameLine();
-        if (ImGui.Button("Clear Queue"))
+        // Only show Clear Queue button if not in manual mode
+        if (!Plugin.Configuration.ManualMode)
         {
-            Plugin.ClearMessageQueue();
+            ImGui.SameLine();
+            if (ImGui.Button("Clear Queue"))
+            {
+                Plugin.ClearMessageQueue();
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Clear pending chat messages and reset timer");
         }
-        if (ImGui.IsItemHovered())
-            ImGui.SetTooltip("Clear pending chat messages and reset timer");
     }
     
+    private void DrawManualModeSection()
+    {
+        ImGui.TextColored(new Vector4(1, 0.8f, 0, 1), "Manual Mode Active");
+        ImGui.TextWrapped("Chat automation is disabled. Use the buttons below to copy messages and paste them manually in chat.");
+        ImGui.Spacing();
+        
+        // Game start message
+        if (Plugin.IsGameActive)
+        {
+            if (ImGui.Button("Copy Game Start Message"))
+            {
+                var message = Plugin.GetGameStartText();
+                ImGui.SetClipboardText(message);
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Copy the game start announcement to clipboard");
+            
+            ImGui.SameLine();
+            if (ImGui.Button("Copy Instructions"))
+            {
+                var message = Plugin.GetGameInstructionText();
+                ImGui.SetClipboardText(message);
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Copy player instructions to clipboard");
+            
+            // Winner announcements
+            var winners = Plugin.GetCurrentWinners();
+            if (winners.Count > 0)
+            {
+                ImGui.Spacing();
+                ImGui.Text("Winner Announcements:");
+                
+                foreach (var winner in winners)
+                {
+                    if (ImGui.Button($"Copy: {winner.PlayerName} ({winner.RollValue})##winner_{winner.PlayerName}"))
+                    {
+                        var message = Plugin.GetWinnerAnnouncementText(winner);
+                        ImGui.SetClipboardText(message);
+                    }
+                }
+                
+                ImGui.Spacing();
+                if (ImGui.Button("Copy All Winners"))
+                {
+                    var messages = winners.Select(w => Plugin.GetWinnerAnnouncementText(w));
+                    var allMessages = string.Join("\n", messages);
+                    ImGui.SetClipboardText(allMessages);
+                }
+                if (ImGui.IsItemHovered())
+                    ImGui.SetTooltip("Copy all winner announcements to clipboard (one per line)");
+            }
+            
+            // Game end message
+            ImGui.Spacing();
+            if (ImGui.Button("Copy Game End Message"))
+            {
+                var message = Plugin.GetGameEndText();
+                ImGui.SetClipboardText(message);
+            }
+            if (ImGui.IsItemHovered())
+                ImGui.SetTooltip("Copy the game end announcement to clipboard");
+        }
+        else
+        {
+            ImGui.TextDisabled("Start a game to access copy/paste functions");
+        }
+    }
     
     private void DrawWinningNumbers()
     {
